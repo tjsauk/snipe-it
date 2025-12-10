@@ -4,6 +4,8 @@
         <label class="form-control" for="requestable">
         <input type="checkbox" value="1" name="requestable" id="requestable" {{ old('requestable', $item->requestable) == '1' ? ' checked="checked"' : '' }}> {{ $requestable_text }}
         </label>
-
+        <p class="help-block">
+            Check this if the item can run out and needs to be requested when stock is low.
+        </p>
     </div>
 </div>

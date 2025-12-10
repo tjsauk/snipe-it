@@ -71,6 +71,11 @@ class CategoriesController extends Controller
     {
         $this->authorize('create', Category::class);
         $category = new Category();
+        $category->is_placeholder = $request->has('is_placeholder');
+
+        $category->allow_checkout_to_user      = $request->has('allow_checkout_to_user');
+        $category->allow_checkout_to_asset     = $request->has('allow_checkout_to_asset');
+        $category->allow_checkout_to_location  = $request->has('allow_checkout_to_location');
         $category->name = $request->input('name');
         $category->category_type = $request->input('category_type');
         $category->eula_text = $request->input('eula_text');
@@ -118,7 +123,11 @@ class CategoriesController extends Controller
     {
         $this->authorize('update', Category::class);
         $category->name = $request->input('name');
+        $category->is_placeholder = $request->has('is_placeholder');
 
+        $category->allow_checkout_to_user      = $request->has('allow_checkout_to_user');
+        $category->allow_checkout_to_asset     = $request->has('allow_checkout_to_asset');
+        $category->allow_checkout_to_location  = $request->has('allow_checkout_to_location');
         // Don't allow the user to change the category_type once it's been created
         if (($request->filled('category_type') && ($category->itemCount() > 0))) {
             $request->validate(['category_type' => 'in:'.$category->category_type]);

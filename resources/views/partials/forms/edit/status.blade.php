@@ -13,6 +13,9 @@
             aria-label="status_id"
         />
         {!! $errors->first('status_id', '<span class="alert-msg" aria-hidden="true"><i class="fas fa-times" aria-hidden="true"></i> :message</span>') !!}
+        <p class="help-block">
+            Choose recearch group as a status only if the asset is bought to a specific project.
+        </p>
     </div>
     <div class="col-md-2 col-sm-2 text-left">
 

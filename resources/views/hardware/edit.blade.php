@@ -19,8 +19,9 @@
 {{-- Page content --}}
 @section('inputFields')
     
-    @include ('partials.forms.edit.company-select', ['translated_name' => trans('general.company'), 'fieldname' => 'company_id'])
-
+    
+    @include ('partials.forms.edit.name', ['translated_name' => trans('admin/hardware/form.name')])
+    @include ('partials.forms.edit.supplier-select', ['translated_name' => trans('general.supplier'), 'fieldname' => 'supplier_id'])
 
   <!-- Asset Tag -->
     <div class="form-group {{ ($errors->has('asset_tag') || $errors->has('asset_tags.1')) ? ' has-error' : '' }}">
@@ -44,6 +45,9 @@
                      value="{{ old('asset_tags.1', \App\Models\Asset::autoincrement_asset()) }}" required>
               {!! $errors->first('asset_tags.1', '<span class="alert-msg"><i class="fas fa-times"></i> :message</span>') !!}
               {!! $errors->first('asset_tag', '<span class="alert-msg"><i class="fas fa-times"></i> :message</span>') !!}
+              <p class="help-block">
+                Use the chosen archived tag that has a printed QR sticker. 
+            </p>
           </div>
           <div class="col-md-2 col-sm-12">
               <button class="add_field_button btn btn-default btn-sm" name="add_field_button">
@@ -54,7 +58,27 @@
               </button>
           </div>
       @endif
-  </div>
+    </div>
+
+    {{-- New: quantity field for creating multiple assets --}}
+    <div class="form-group">
+        <label for="asset_quantity" class="col-md-3 control-label">
+            Quantity
+        </label>
+        <div class="col-md-7 col-sm-12">
+            <input class="form-control"
+                type="number"
+                name="asset_quantity"
+                id="asset_quantity"
+                min="1"
+                value="{{ old('asset_quantity', 1) }}">
+            {!! $errors->first('asset_quantity', '<span class="alert-msg"><i class="fas fa-times"></i> :message</span>') !!}
+            <p class="help-block">
+                How many assets to create starting from the asset tag above.
+            </p>
+        </div>
+    </div>
+
 
     @include ('partials.forms.edit.serial', ['fieldname'=> 'serials[1]', 'old_val_name' => 'serials.1', 'translated_serial' => trans('admin/hardware/form.serial')])
 
@@ -146,7 +170,7 @@
             </x-form-legend>
 
             <div id="optional_details" class="col-md-12" style="display:none">
-                @include ('partials.forms.edit.name', ['translated_name' => trans('admin/hardware/form.name')])
+                @include ('partials.forms.edit.company-select', ['translated_name' => trans('general.company'), 'fieldname' => 'company_id'])
                 @include ('partials.forms.edit.warranty')
                 @include ('partials.forms.edit.datepicker', ['translated_name' => trans('admin/hardware/form.expected_checkin'),'fieldname' => 'expected_checkin'])
                 @include ('partials.forms.edit.datepicker', ['translated_name' => trans('general.next_audit_date'),'fieldname' => 'next_audit_date', 'help_text' => trans('general.next_audit_date_help')])
@@ -183,8 +207,7 @@
                     @include ('partials.forms.edit.order_number')
                     @include ('partials.forms.edit.datepicker', ['translated_name' => trans('general.purchase_date'),'fieldname' => 'purchase_date'])
                     @include ('partials.forms.edit.datepicker', ['translated_name' => trans('admin/hardware/form.eol_date'),'fieldname' => 'asset_eol_date'])
-                    @include ('partials.forms.edit.supplier-select', ['translated_name' => trans('general.supplier'), 'fieldname' => 'supplier_id'])
-
+                    
                     @php
                         $currency_type = null;
                         if ($item->id && $item->location) {

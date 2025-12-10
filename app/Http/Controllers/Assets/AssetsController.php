@@ -101,6 +101,8 @@ class AssetsController extends Controller
      */
     public function store(CreateMultipleAssetRequest $request): RedirectResponse
     {
+
+
         $this->authorize(Asset::class);
 
         // There are a lot more rules to add here but prevents
@@ -110,6 +112,35 @@ class AssetsController extends Controller
         // Handle asset tags - there could be one, or potentially many.
         // This is only necessary on create, not update, since bulk editing is handled
         // differently
+            /**
+         * === NEW: handle quantity + auto-generated asset tags ===
+         */
+        $quantity = (int) $request->input('asset_quantity', 1);
+        if ($quantity < 1) {
+            $quantity = 1;
+        }
+        // Existing asset_tags array from form (might only contain [1] => start_tag)
+        $assetTagsFromRequest = $request->input('asset_tags', []);
+
+        // If user asked for multiple assets and provided a starting tag
+        if ($quantity > 1 && isset($assetTagsFromRequest[1]) && ! empty($assetTagsFromRequest[1])) {
+            $startTag = $assetTagsFromRequest[1];
+
+            // Generate $quantity unique tags, skipping ones already in use
+            $generatedTags = $this->generateAssetTags($startTag, $quantity);
+
+            // Rebuild as 1-based array: [1 => tag1, 2 => tag2, ...]
+            $assetTagsFromRequest = [];
+            foreach ($generatedTags as $i => $tag) {
+                $assetTagsFromRequest[$i + 1] = $tag;
+            }
+
+            // Push back into the request so the existing logic below just works
+            $request->merge([
+                'asset_tags' => $assetTagsFromRequest,
+            ]);
+        }
+
         $asset_tags = $request->input('asset_tags');
         $model = AssetModel::find($request->input('model_id'));
         $serial_errors = [];
@@ -1079,5 +1110,64 @@ class AssetsController extends Controller
         $requestedItems = $requestedItems->orderBy('created_at', 'desc')->get();
 
         return view('hardware/requested', compact('requestedItems'));
+    }
+
+            /**
+     * Generate a list of unique asset tags starting from $startTag,
+     * skipping tags that already exist in the database.
+     */
+    protected function generateAssetTags(string $startTag, int $quantity): array
+    {
+        $tags = [];
+        $current = $startTag;
+        $attempts = 0;
+
+        // Safety cap: avoid infinite loops if something is wrong
+        $maxAttempts = $quantity * 10;
+
+        while (count($tags) < $quantity && $attempts < $maxAttempts) {
+            $attempts++;
+
+            // Skip if tag already exists in DB
+            if (Asset::where('asset_tag', $current)->exists()) {
+                $current = $this->incrementAssetTag($current);
+                continue;
+            }
+
+            $tags[] = $current;
+            $current = $this->incrementAssetTag($current);
+        }
+
+        return $tags;
+    }
+
+    /**
+     * Increment an asset tag string.
+     * If it ends in digits, increment those digits, preserving zero-padding.
+     * If not, append or increment a -N suffix.
+     */
+    protected function incrementAssetTag(string $tag): string
+    {
+        // Case 1: something like LAP-0001 → LAP-0002
+        if (preg_match('/^(.*?)(\d+)$/', $tag, $matches)) {
+            $prefix = $matches[1];
+            $number = $matches[2];
+            $length = strlen($number);
+            $next = (int) $number + 1;
+
+            return $prefix . str_pad((string) $next, $length, '0', STR_PAD_LEFT);
+        }
+
+        // Case 2: something like LAP-ABC-1 → LAP-ABC-2
+        if (preg_match('/^(.*?)-(\d+)$/', $tag, $matches)) {
+            $prefix = $matches[1];
+            $number = $matches[2];
+            $next = (int) $number + 1;
+
+            return $prefix . '-' . $next;
+        }
+
+        // Fallback: no number at the end → add "-2"
+        return $tag . '-2';
     }
 }

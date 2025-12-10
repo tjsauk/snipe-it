@@ -202,6 +202,13 @@ class User extends SnipeModel implements AuthenticatableContract, AuthorizableCo
         });
     }
 
+    public function mustSelfCheckout(): bool
+    {
+        return $this->groups()
+            ->where('only_self_checkout', 1)
+            ->exists();
+    }
+
     /**
      * This overrides the SnipeModel displayName accessor to return the full name if display_name is not set
      * @see SnipeModel::displayName()
@@ -213,6 +220,31 @@ class User extends SnipeModel implements AuthenticatableContract, AuthorizableCo
         return Attribute:: make(
             get: fn(mixed $value) => $value ?? $this->getFullNameAttribute(),
         );
+    }
+
+        /**
+     * Checks if user has a exeption to edit only placeholders
+     *
+     * 
+     * 
+     * 
+     */
+    public function isPlaceholderOnlyEditor(): bool
+    {
+        // If the user is a superuser or admin, we probably don't want to restrict them.
+        // (Optional – you can skip this if you WANT to restrict admins too.)
+        if (method_exists($this, 'isSuperUser') && $this->isSuperUser()) {
+            return false;
+        }
+
+        if (method_exists($this, 'isAdmin') && $this->isAdmin()) {
+            return false;
+        }
+
+        // Make sure the groups() relationship exists; it usually does in Snipe-IT.
+        return $this->groups()
+            ->where('only_edit_placeholders', 1)
+            ->exists();
     }
 
     public function isAvatarExternal() : bool

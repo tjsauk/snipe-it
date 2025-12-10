@@ -17,6 +17,9 @@
                 </option>
             @endif
         </select>
+        <p class="help-block">
+            Manufacturer of the asset. 
+        </p>
     </div>
 
     <div class="col-md-1 col-sm-1 text-left">

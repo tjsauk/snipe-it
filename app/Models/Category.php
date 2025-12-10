@@ -75,6 +75,10 @@ class Category extends SnipeModel
         'created_by',
         'tag_color',
         'notes',
+        'is_placeholder',
+        'allow_checkout_to_user',
+        'allow_checkout_to_asset',
+        'allow_checkout_to_location',
     ];
 
     use Searchable;
@@ -92,6 +96,8 @@ class Category extends SnipeModel
      * @var array
      */
     protected $searchableRelations = [];
+
+
 
     /**
      * Checks if category can be deleted

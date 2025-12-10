@@ -78,6 +78,8 @@ class GroupsController extends Controller
         } else {
             $group->permissions = null;
         }
+        $group->only_self_checkout = $request->has('only_self_checkout');
+        $group->only_edit_placeholders = $request->has('only_edit_placeholders');
 
         $group->permissions = json_encode($request->input('permission'));
         $group->created_by = auth()->id();
@@ -153,6 +155,8 @@ class GroupsController extends Controller
 
         $group->notes = $request->input('notes');
 
+        $group->only_self_checkout = $request->has('only_self_checkout');
+        $group->only_edit_placeholders = $request->has('only_edit_placeholders');
 
         if (! config('app.lock_passwords')) {
             if ($group->save()) {

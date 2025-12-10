@@ -178,7 +178,7 @@
                     @endcan
 
 
-                    @can('update', \App\Models\Asset::class)
+                    @can('uploadFiles', \App\Models\Asset::class)
                         <li class="pull-right">
                             <a href="#" data-toggle="modal" data-target="#uploadFileModal">
                                 <span class="hidden-lg hidden-xl hidden-md">
@@ -1431,7 +1431,7 @@
             </div><!-- nav-tabs-custom -->
         </div>
 
-        @can('update', \App\Models\Asset::class)
+        @can('uploadFiles', \App\Models\Asset::class)
             @include ('modals.upload-file', ['item_type' => 'asset', 'item_id' => $asset->id])
         @endcan
     @stop

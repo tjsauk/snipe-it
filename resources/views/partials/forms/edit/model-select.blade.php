@@ -24,6 +24,9 @@
             @endif
 
         </select>
+        <p class="help-block">
+            Select correct subcategory for the asset!
+        </p>
     </div>
     <div class="col-md-1 col-sm-1 text-left">
         @can('create', \App\Models\AssetModel::class)

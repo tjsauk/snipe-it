@@ -36,6 +36,96 @@
     </div>
 </div>
 
+{{-- Placeholder category --}}
+<div class="form-group {{ $errors->has('is_placeholder') ? ' has-error' : '' }}">
+    <label class="col-md-3 control-label" for="is_placeholder">
+        {{ __('Placeholder category') }}
+    </label>
+    <div class="col-md-7">
+        <div class="checkbox">
+            <label>
+                <input type="checkbox"
+                    id="is_placeholder"
+                    name="is_placeholder"
+                    value="1"
+                    {{ old('is_placeholder', $category->is_placeholder ?? false) ? 'checked' : '' }}>
+            </label>
+        </div>
+        {!! $errors->first('is_placeholder', '<span class="alert-msg">:message</span>') !!}
+    </div>
+
+    <div class="col-md-7 col-md-offset-3">
+        <p class="help-block">
+            {{ __('Assets in this category can be edited by groups with "only edit placeholders" enabled.') }}
+        </p>
+    </div>
+</div>
+
+{{-- Allowed checkout targets --}}
+<div class="form-group">
+    {{-- Main heading spanning only left label column --}}
+    <label class="col-md-3 control-label">
+        {{ __('Allowed checkout targets') }}
+    </label>
+</div>
+
+<div class="form-group">
+    <label class="col-md-3 control-label" for="allow_checkout_to_user">
+        {{ __('User') }}
+    </label>
+    <div class="col-md-7">
+        <div class="checkbox">
+            <label>
+                <input type="checkbox"
+                       id="allow_checkout_to_user"
+                       name="allow_checkout_to_user"
+                       value="1"
+                       {{ old('allow_checkout_to_user', $category->allow_checkout_to_user ?? true) ? 'checked' : '' }}>
+            </label>
+        </div>
+    </div>
+</div>
+
+<div class="form-group">
+    <label class="col-md-3 control-label" for="allow_checkout_to_asset">
+        {{ __('Asset') }}
+    </label>
+    <div class="col-md-7">
+        <div class="checkbox">
+            <label>
+                <input type="checkbox"
+                       id="allow_checkout_to_asset"
+                       name="allow_checkout_to_asset"
+                       value="1"
+                       {{ old('allow_checkout_to_asset', $category->allow_checkout_to_asset ?? true) ? 'checked' : '' }}>
+            </label>
+        </div>
+    </div>
+</div>
+
+<div class="form-group">
+    <label class="col-md-3 control-label" for="allow_checkout_to_location">
+        {{ __('Location') }}
+    </label>
+    <div class="col-md-7">
+        <div class="checkbox">
+            <label>
+                <input type="checkbox"
+                       id="allow_checkout_to_location"
+                       name="allow_checkout_to_location"
+                       value="1"
+                       {{ old('allow_checkout_to_location', $category->allow_checkout_to_location ?? true) ? 'checked' : '' }}>
+            </label>
+        </div>
+    </div>
+</div>
+
+<div class="col-md-7 col-md-offset-3">
+    <p class="help-block">
+        {{ __('Choose what this category’s items can be checked out to.') }}
+    </p>
+</div>
+
 <livewire:category-edit-form
     :alert-on-response="(bool) old('alert_on_response', $item->alert_on_response)"
     :default-eula-text="$snipeSettings->default_eula_text"

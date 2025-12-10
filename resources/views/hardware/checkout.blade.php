@@ -1,5 +1,21 @@
 @extends('layouts/default')
 
+@php
+    /** @var \App\Models\User $authUser */
+    $authUser = auth()->user();
+    $onlySelfCheckout = $authUser && method_exists($authUser, 'mustSelfCheckout') && $authUser->mustSelfCheckout();
+
+    // Use the actual variable name used in this view:
+    // if it's $item instead of $asset, swap accordingly.
+    $assetModel   = optional($asset->model ?? null);
+    $assetCategory = optional($assetModel->category ?? null);
+
+    $allowCheckoutToUser      = $assetCategory->allow_checkout_to_user      ?? true;
+    $allowCheckoutToAsset     = $assetCategory->allow_checkout_to_asset     ?? true;
+    $allowCheckoutToLocation  = $assetCategory->allow_checkout_to_location  ?? true;
+@endphp
+
+
 {{-- Page title --}}
 @section('title')
     {{ trans('admin/hardware/general.checkout') }}
@@ -72,37 +88,92 @@
                         </div>
 
                         <!-- Asset Name -->
-                        <div class="form-group {{ $errors->has('name') ? 'error' : '' }}">
-                            <label for="name" class="col-md-3 control-label">
-                                {{ trans('admin/hardware/form.name') }}
-                            </label>
+                        @can('update', $asset)
+                            {{-- Asset Name (editable for users with edit rights) --}}
+                            <div class="form-group {{ $errors->has('name') ? 'error' : '' }}">
+                                <label for="name" class="col-md-3 control-label">
+                                    {{ trans('admin/hardware/form.name') }}
+                                </label>
 
-                            <div class="col-md-8">
-                                <input class="form-control" type="text" name="name" id="name"
-                                       value="{{ old('name', $asset->name) }}" tabindex="1">
-                                {!! $errors->first('name', '<span class="alert-msg" aria-hidden="true"><i class="fas fa-times" aria-hidden="true"></i> :message</span>') !!}
+                                <div class="col-md-8">
+                                    <input class="form-control"
+                                        type="text"
+                                        name="name"
+                                        id="name"
+                                        value="{{ old('name', $asset->name) }}"
+                                        tabindex="1">
+                                    {!! $errors->first('name', '<span class="alert-msg" aria-hidden="true"><i class="fas fa-times" aria-hidden="true"></i> :message</span>') !!}
+                                </div>
                             </div>
-                        </div>
+                        @else
+                            {{-- Asset Name (read-only, but still posted as original value) --}}
+                            <div class="form-group">
+                                <label for="name" class="col-md-3 control-label">
+                                    {{ trans('admin/hardware/form.name') }}
+                                </label>
+
+                                <div class="col-md-8">
+                                    <p class="form-control-static">
+                                        {{ $asset->name }}
+                                    </p>
+
+                                    {{-- Hidden input so the original name is still submitted --}}
+                                    <input type="hidden" name="name" value="{{ $asset->name }}">
+                                </div>
+                            </div>
+                        @endcan
+
 
                         <!-- Status -->
-                        <div class="form-group {{ $errors->has('status_id') ? 'error' : '' }}">
-                            <label for="status_id" class="col-md-3 control-label">
-                                {{ trans('admin/hardware/form.status') }}
-                            </label>
-                            <div class="col-md-7 required">
-                                <x-input.select
-                                    name="status_id"
-                                    :options="$statusLabel_list"
-                                    :selected="$asset->status_id"
-                                    style="width: 100%;"
-                                    aria-label="status_id"
-                                />
-                                {!! $errors->first('status_id', '<span class="alert-msg" aria-hidden="true"><i class="fas fa-times" aria-hidden="true"></i> :message</span>') !!}
+                        @can('update', $asset)
+                            <div class="form-group {{ $errors->has('status_id') ? 'error' : '' }}">
+                                <label for="status_id" class="col-md-3 control-label">
+                                    {{ trans('admin/hardware/form.status') }}
+                                </label>
+                                <div class="col-md-7 required">
+                                    <x-input.select
+                                        name="status_id"
+                                        :options="$statusLabel_list"
+                                        :selected="$asset->status_id"
+                                        style="width: 100%;"
+                                        aria-label="status_id"
+                                    />
+                                    {!! $errors->first('status_id', '<span class="alert-msg" aria-hidden="true"><i class="fas fa-times" aria-hidden="true"></i> :message</span>') !!}
+                                </div>
                             </div>
-                        </div>
+                        @endcan
 
-                        @include ('partials.forms.checkout-selector', ['user_select' => 'true','asset_select' => 'true', 'location_select' => 'true'])
-                        @include ('partials.forms.edit.user-select', ['translated_name' => trans('general.user'), 'fieldname' => 'assigned_user', 'style' => (session('checkout_to_type') ?: 'user') == 'user' ? '' : 'display: none;'])
+
+                        @include('partials.forms.checkout-selector', [
+                            'user_select'     => $allowCheckoutToUser     ? 'true' : 'false',
+                            'asset_select'    => $allowCheckoutToAsset    ? 'true' : 'false',
+                            'location_select' => $allowCheckoutToLocation ? 'true' : 'false',
+                        ])
+                        
+                        @if ($allowCheckoutToUser)
+                            @if ($onlySelfCheckout)
+                                {{-- Self-checkout users: can only choose themselves --}}
+                                <div class="form-group" style="{{ (session('checkout_to_type') ?: 'user') == 'user' ? '' : 'display: none;' }}">
+                                    <label class="col-md-3 control-label">
+                                        {{ trans('general.user') }}
+                                    </label>
+                                    <div class="col-md-7">
+                                        <p class="form-control-static">
+                                            {{ $authUser->present()->fullName ?? $authUser->name ?? $authUser->email }}
+                                        </p>
+                                        <input type="hidden" name="assigned_user" value="{{ $authUser->id }}">
+                                    </div>
+                                </div>
+                            @else
+                                {{-- Normal users: show full user selector --}}
+                                @include('partials.forms.edit.user-select', [
+                                    'translated_name' => trans('general.user'),
+                                    'fieldname'       => 'assigned_user',
+                                    'style'           => (session('checkout_to_type') ?: 'user') == 'user' ? '' : 'display: none;',
+                                ])
+                            @endif
+                        @endif
+
                         <!-- We have to pass unselect here so that we don't default to the asset that's being checked out. We want that asset to be pre-selected everywhere else. -->
                         @include ('partials.forms.edit.asset-select', ['translated_name' => trans('general.select_asset'), 'fieldname' => 'assigned_asset', 'company_id' => $asset->company_id, 'unselect' => 'true', 'style' => session('checkout_to_type') == 'asset' ? '' : 'display: none;'])
                         @include ('partials.forms.edit.location-select', ['translated_name' => trans('general.location'), 'fieldname' => 'assigned_location', 'style' => session('checkout_to_type') == 'location' ? '' : 'display: none;'])

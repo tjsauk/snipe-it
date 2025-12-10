@@ -8,5 +8,8 @@
                 <i class="fas fa-times" aria-hidden="true"></i> {{ $message }}
             </span>
         @enderror
+        <p class="help-block">
+                Input assets Serial number if available.
+        </p>
     </div>
 </div>

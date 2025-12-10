@@ -20,6 +20,8 @@ class Group extends SnipeModel
         'name',
         'permissions',
         'notes',
+        'only_self_checkout',
+        'only_edit_placeholders',
     ];
 
     /**

@@ -39,6 +39,29 @@
     </div>
 </div>
 
+<div class="form-group">
+    <label class="col-md-3 control-label">Only Self Checkout</label>
+    <div class="col-md-7 col-sm-12">
+        <input type="checkbox" name="only_self_checkout" value="1"
+           {{ old('only_self_checkout', $group->only_self_checkout ?? false) ? 'checked' : '' }}>
+        <p class="help-block">
+            Users in this group can only check assets out to themselves and
+            only check in assets checked out to them.
+        </p>
+    </div>
+</div>
+
+<div class="form-group">
+    <label class="col-md-3 control-label">Only Edit Placeholders</label>
+    <div class="col-md-7 col-sm-12">
+        <input type="checkbox" name="only_edit_placeholders" value="1"
+           {{ old('only_edit_placeholders', $group->only_edit_placeholders ?? false) ? 'checked' : '' }}>
+        <p class="help-block">
+            Users in this group can only edit assets in the “Placeholder” category.
+        </p>
+    </div>
+</div>
+
 
 <fieldset>
     <x-form-legend icon="warning" help_text="{{ (isset($all_users_count) && ($all_users_count < config('app.max_unpaginated_records'))) ? trans('general.add_users_to_group_help') : trans('admin/settings/general.too_many_users_to_show', ['count'=> $all_users_count, 'max' => config('app.max_unpaginated_records')]) }}">
