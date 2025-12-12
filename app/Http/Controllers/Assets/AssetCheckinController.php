@@ -49,6 +49,10 @@ class AssetCheckinController extends Controller
             return redirect()->route('hardware.edit', $asset)->withErrors($asset->getErrors());
         }
 
+        $asset->autoCheckoutActiveReservationIfDue();
+        $asset->refresh();
+
+
         $target_option = match ($asset->assigned_type) {
             'App\Models\Asset' => trans('admin/hardware/form.redirect_to_type', ['type' => trans('general.asset_previous')]),
             'App\Models\Location' => trans('admin/hardware/form.redirect_to_type', ['type' => trans('general.location')]),

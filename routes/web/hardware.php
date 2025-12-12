@@ -9,6 +9,8 @@ use App\Models\Setting;
 use Tabuna\Breadcrumbs\Trail;
 use Illuminate\Support\Facades\Route;
 use App\Models\Asset;
+use App\Http\Controllers\Assets\AssetReservationController;
+
 
 /*
 |--------------------------------------------------------------------------
@@ -110,6 +112,21 @@ Route::group(
         Route::post('{assetId}/checkout',
             [AssetCheckoutController::class, 'store']
         )->name('hardware.checkout.store');
+
+        // Reserve = use checkout page, but in reservation mode
+        Route::get('{asset}/reserve', [AssetCheckoutController::class, 'create'])
+            ->name('hardware.reserve.create');
+
+        Route::post('{assetId}/reserve', [AssetCheckoutController::class, 'store'])
+            ->name('hardware.reserve.store');
+
+            // Cancel reservation
+        Route::delete('{asset}/reservations/{reservation}', [AssetReservationController::class, 'destroy'])
+            ->name('hardware.reserve.destroy');
+
+        // Show reservation management page for an asset (superuser only)
+        Route::get('hardware/{asset}/reservations/manage', [AssetReservationController::class, 'manage'])
+            ->name('hardware.reserve.manage');
 
         Route::get('{asset}/checkin/{backto?}',
             [AssetCheckinController::class, 'create']

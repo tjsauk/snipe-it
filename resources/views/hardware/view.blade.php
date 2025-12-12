@@ -252,6 +252,64 @@
                                     @endif
                                 @endif
 
+                                {{-- Reservation actions --}}
+                                @php
+                                    $currentUser = auth()->user();
+                                    $userId = $currentUser ? $currentUser->id : null;
+                                    $userReservation = $userId ? $asset->activeReservationForUser($userId) : null;
+                                @endphp
+
+                                @if (($asset->assetstatus) && ($asset->assetstatus->deployable=='1') && ($asset->deleted_at==''))
+                                    {{-- Reserve: reuse checkout form in reservation mode --}}
+                                    
+                                    <a href="{{ route('hardware.reserve.create', $asset->id) }}?reserve=1"
+                                    class="btn btn-sm btn-warning btn-social btn-block hidden-print{{ ((!$asset->model) ? ' disabled' : '') }}">
+                                        <i class="fa fa-calendar-plus-o"></i>
+                                        Reserve
+                                    </a>
+                                    
+                                @endif
+
+                                
+                                {{-- Cancel reservation buttons --}}
+                                @php
+                                    $currentUser = auth()->user();
+                                    $userId = $currentUser ? $currentUser->id : null;
+                                    $userReservation = $userId ? $asset->activeReservationForUser($userId) : null;
+                                @endphp
+
+                                @if ($currentUser && method_exists($currentUser, 'isSuperUser') && $currentUser->isSuperUser())
+                                    @php
+                                        $activeReservationsCount = $asset->activeReservations()->count();
+                                    @endphp
+
+                                    @if ($activeReservationsCount > 0)
+                                        {{-- Superuser: single manage-reservations button (like checkin page) --}}
+                                        <a href="{{ route('hardware.reserve.manage', $asset->id) }}"
+                                        class="btn btn-sm btn-default btn-social btn-block hidden-print"
+                                        style="margin-top: 5px;">
+                                            <i class="fa fa-calendar-times-o"></i>
+                                            Manage reservations
+                                        </a>
+                                    @endif
+
+                                @elseif ($userReservation)
+                                    {{-- Normal user: can cancel ONLY their own reservation --}}
+                                    <form method="POST"
+                                        action="{{ route('hardware.reserve.destroy', [$asset->id, $userReservation->id]) }}"
+                                        style="margin-top: 5px;">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button type="submit"
+                                                class="btn btn-sm btn-default btn-social btn-block hidden-print">
+                                            <i class="fa fa-times"></i>
+                                            Cancel my reservation
+                                        </button>
+                                    </form>
+                                @endif
+
+
+
                                         <!-- Add notes -->
                                         @can('update', \App\Models\Asset::class)
                                             <div class="col-md-12 hidden-print" style="padding-top: 5px;">
@@ -489,6 +547,38 @@
                                             </div>
                                         </div>
                                     @endif
+
+                                    {{-- Reservation status display --}}
+                                    @php
+                                        $activeReservations = $asset->activeReservations()->with('user')->get();
+                                    @endphp
+
+                                    @if ($activeReservations->count() > 0)
+                                        <div style="margin-top: 5px;">
+                                            {{-- Yellow "Reserved" badge --}}
+                                            <span class="label label-warning">
+                                                RESERVED
+                                            </span>
+
+                                            {{-- List reservations with user and date range --}}
+                                            <ul style="margin-top: 5px; padding-left: 18px;">
+                                                @foreach($activeReservations as $res)
+                                                    @php
+                                                        $until = $res->reserved_until ?: $res->reserved_from;
+                                                    @endphp
+                                                    <li>
+                                                        {{ optional($res->user)->username
+                                                            ?? optional($res->user)->email
+                                                            ?? 'User #'.$res->user_id }}:
+                                                        {{ Helper::getFormattedDateObject($res->reserved_from, 'date', false) }}
+                                                        –
+                                                        {{ Helper::getFormattedDateObject($until, 'date', false) }}
+                                                    </li>
+                                                @endforeach
+                                            </ul>
+                                        </div>
+                                    @endif
+
 
 
                                     @if ($asset->company)

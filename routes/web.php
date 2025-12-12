@@ -32,6 +32,7 @@ use App\Models\ReportTemplate;
 use Illuminate\Support\Facades\Route;
 use Tabuna\Breadcrumbs\Trail;
 
+
 Route::group(['middleware' => 'auth'], function () {
     /*
     * Companies
@@ -39,6 +40,8 @@ Route::group(['middleware' => 'auth'], function () {
     Route::resource('companies', CompaniesController::class, [
         'parameters' => ['company' => 'company_id'],
     ]);
+
+    
 
     /*
     * Categories

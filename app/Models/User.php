@@ -419,6 +419,11 @@ class User extends SnipeModel implements AuthenticatableContract, AuthorizableCo
         return $this->belongsTo(\App\Models\Company::class, 'company_id');
     }
 
+    public function assetReservations()
+    {
+        return $this->hasMany(\App\Models\AssetReservation::class);
+    }
+
     /**
      * Establishes the user -> department relationship
      *

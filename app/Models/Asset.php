@@ -15,6 +15,7 @@ use App\Models\Traits\Searchable;
 use App\Presenters\AssetPresenter;
 use App\Presenters\Presentable;
 use Carbon\Carbon;
+use App\Models\AssetReservation;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -425,6 +426,168 @@ class Asset extends Depreciable
     public function company()
     {
         return $this->belongsTo(\App\Models\Company::class, 'company_id');
+    }
+
+
+    public function reservations()
+    {
+        return $this->hasMany(AssetReservation::class);
+    }
+
+    /** Active reservations for this asset (any user). */
+    public function activeReservations()
+    {
+        return $this->reservations()->active()->orderBy('reserved_from');
+    }
+
+    /** Active reservation for a specific user (there should be at most one). */
+    public function activeReservationForUser(?int $userId = null)
+    {
+        $userId = $userId ?: auth()->id();
+
+        return $this->activeReservations()
+            ->where('user_id', $userId)
+            ->first();
+    }
+
+    /** True if this asset has any active reservations (for any user). */
+    public function hasActiveReservation(): bool
+    {
+        return $this->activeReservations()->exists();
+    }
+
+    /**
+     * Determine if the given date range overlaps an ongoing checkout window.
+     * (We’ll use this later to block reservations that conflict with a live checkout.)
+     */
+    public function overlapsOngoingCheckout($from, $until): bool
+    {
+        if (!$this->assigned_to) {
+            return false; // not checked out at all
+        }
+
+        $from = Carbon::parse($from)->startOfDay();
+        $until = Carbon::parse($until)->endOfDay();
+
+        $checkoutStart = $this->last_checkout
+            ? Carbon::parse($this->last_checkout)->startOfDay()
+            : null;
+
+        $checkoutEnd = null;
+
+        if ($this->last_checkin) {
+            // checked in early – window ends at last_checkin
+            $checkoutEnd = Carbon::parse($this->last_checkin)->endOfDay();
+        } elseif ($this->expected_checkin) {
+            $checkoutEnd = Carbon::parse($this->expected_checkin)->endOfDay();
+        }
+
+        if (!$checkoutStart || !$checkoutEnd) {
+            return false;
+        }
+
+        // standard interval overlap
+        return $from <= $checkoutEnd && $until >= $checkoutStart;
+    }
+
+    /**
+     * Does the given date range overlap any active reservation on this asset?
+     *
+     * Optionally exclude reservations for a specific user (e.g. allow overlap with their own reservation).
+     */
+    public function overlapsReservations($from, $until, ?int $excludeUserId = null): bool
+    {
+        $from  = Carbon::parse($from)->startOfDay();
+        $until = Carbon::parse($until)->endOfDay();
+
+        $query = $this->activeReservations();
+
+        if ($excludeUserId !== null) {
+            $query->where('user_id', '!=', $excludeUserId);
+        }
+
+        return $query->where(function ($q) use ($from, $until) {
+            $q->where('reserved_from', '<=', $until)
+            ->where(function ($q2) use ($from) {
+                $q2->whereNull('reserved_until')
+                    ->orWhere('reserved_until', '>=', $from);
+            });
+        })->exists();
+    }
+
+    /**
+     * If there is an active reservation whose window includes "today"
+     * and the asset is not currently checked out, automatically convert
+     * that reservation into a real checkout.
+     *
+     * - checkout_at = reserved_from
+     * - expected_checkin = reserved_until (if any)
+     * - reservation status -> 'fulfilled'
+     */
+    public function autoCheckoutActiveReservationIfDue(): void
+    {
+        $today = Carbon::today();
+
+        // If the asset is already checked out, do nothing
+        if ($this->assigned_to) {
+            return;
+        }
+
+        // Find the first active reservation whose window includes today
+        $reservation = $this->reservations()
+            ->where('status', 'active')
+            ->whereDate('reserved_from', '<=', $today)
+            ->where(function ($q) use ($today) {
+                $q->whereNull('reserved_until')
+                  ->orWhereDate('reserved_until', '>=', $today);
+            })
+            ->orderBy('reserved_from')
+            ->first();
+
+        if (!$reservation) {
+            return;
+        }
+
+        // We need a logged-in admin user to perform the checkout action
+        $admin = auth()->user();
+        if (!$admin) {
+            return;
+        }
+
+        $targetUser = $reservation->user;
+        if (!$targetUser) {
+            return;
+        }
+
+        // Use the reserved window as checkout & expected checkin
+        $checkoutAt = Carbon::parse($reservation->reserved_from)->toDateString();
+        $expected   = $reservation->reserved_until
+            ? Carbon::parse($reservation->reserved_until)->toDateString()
+            : null;
+
+        // Perform a normal checkout, so logs, emails etc behave as usual
+        $success = $this->checkOut(
+            $targetUser,
+            $admin,
+            $checkoutAt,
+            $expected,
+            'Auto checkout from reservation window',
+            $this->name
+        );
+
+        if ($success) {
+            $reservation->status = 'fulfilled';
+            $reservation->save();
+        }
+    }
+
+    /**
+     * For UI later: deployable + has active reservation ⇒ "yellow reserved" badge.
+     */
+    public function getReservedDeployableAttribute(): bool
+    {
+        return ($this->assetstatus && $this->assetstatus->deployable == '1')
+            && $this->hasActiveReservation();
     }
 
     /**

@@ -4,6 +4,7 @@ namespace App\Policies;
 
 use App\Models\User;
 use App\Models\Asset;
+use App\Models\Location;
 
 class AssetPolicy extends CheckoutablePermissionsPolicy
 {
@@ -114,13 +115,67 @@ class AssetPolicy extends CheckoutablePermissionsPolicy
             return $user->hasAccess($this->columnName().'.checkin');
         }
 
-        // Self-checkout users: can ONLY check in assets assigned to themselves
-        if ($user->mustSelfCheckout()) {
-            return $item->assigned_type === \App\Models\User::class
-                && (int) $item->assigned_to === (int) $user->id;
+        // Superuser can always check in anything
+        if (method_exists($user, 'isSuperUser') && $user->isSuperUser()) {
+            return true;
         }
 
-        // Normal users: old behavior
-        return $user->hasAccess($this->columnName().'.checkin');
+        // If it's not currently assigned to anything, fall back to permission
+        if (is_null($item->assigned_to) || empty($item->assigned_type)) {
+            return $user->hasAccess($this->columnName().'.checkin');
+        }
+
+        $mustSelf = method_exists($user, 'mustSelfCheckout') && $user->mustSelfCheckout();
+        $checkinPerm = $user->hasAccess($this->columnName().'.checkin'); // 'assets.checkin'
+
+        // Case 1: checked out to USER
+        if ($item->assigned_type === \App\Models\User::class) {
+
+            if ($mustSelf) {
+                // Restricted users: only check in assets assigned to themselves
+                return (int) $item->assigned_to === (int) $user->id;
+            }
+
+            // Non-restricted users: use normal checkin permission
+            return $checkinPerm;
+        }
+
+        // Case 2: checked out to LOCATION
+        if ($item->assigned_type === \App\Models\Location::class) {
+            // Anyone with checkin permission can check in, regardless of "only_self_checkout"
+            return $checkinPerm;
+        }
+
+        // Case 3: checked out to another ASSET (parent/child)
+        if ($item->assigned_type === \App\Models\Asset::class) {
+            $parent = Asset::find($item->assigned_to);
+
+            if (! $parent) {
+                // If the parent is missing for some reason, fall back to permission
+                return $checkinPerm;
+            }
+
+            // If parent is currently checked out to a user
+            if ($parent->assigned_type === \App\Models\User::class && $parent->assigned_to) {
+                // Only that user can check in the child asset
+                if ((int) $parent->assigned_to === (int) $user->id) {
+                    return $checkinPerm;
+                }
+
+                // Other non-super users cannot check in
+                return false;
+            }
+
+            // If parent is NOT currently checked out to anyone -> anyone with permission can check in
+            if (is_null($parent->assigned_to)) {
+                return $checkinPerm;
+            }
+
+            // Parent is checked out to some other type; be conservative
+            return false;
+        }
+
+        // Fallback for any other assignment type
+        return $checkinPerm;
     }
 }

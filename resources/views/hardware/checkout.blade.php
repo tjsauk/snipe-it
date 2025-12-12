@@ -15,6 +15,10 @@
     $allowCheckoutToLocation  = $assetCategory->allow_checkout_to_location  ?? true;
 @endphp
 
+@php
+    $isReserve = !empty($reserve_mode) && $reserve_mode;
+@endphp
+
 
 {{-- Page title --}}
 @section('title')
@@ -36,6 +40,12 @@
         <!-- left column -->
         <div class="col-md-7">
             <div class="box box-default">
+                @php
+                    $isReserve  = !empty($reserve_mode) && $reserve_mode;
+                    $storeRoute = $isReserve
+                        ? route('hardware.reserve.store', $asset->id)
+                        : route('hardware.checkout.store', $asset->id);
+                @endphp
                 <form class="form-horizontal" method="post" action="" autocomplete="off">
                     <div class="box-header with-border">
                         <h2 class="box-title"> {{ trans('admin/hardware/form.tag') }} {{ $asset->asset_tag }}</h2>
@@ -189,9 +199,8 @@
 
                                 <x-input.datepicker
                                         name="checkout_at"
-                                        end_date="0d"
                                         col_size_class="col-md-7"
-                                        :value="old('expected_checkin', date('Y-m-d'))"
+                                        :value="old('checkout_at', date('Y-m-d'))"
                                         placeholder="{{ trans('general.select_date') }}"
                                         required="{{ Helper::checkIfRequired($item, 'checkout_at') }}"
                                 />
@@ -215,6 +224,8 @@
                                 {!! $errors->first('expected_checkin', '<span class="alert-msg" aria-hidden="true"><i class="fas fa-times" aria-hidden="true"></i> :message</span>') !!}
                             </div>
                         </div>
+
+                        <input type="hidden" name="reserve_mode" value="{{ !empty($reserve_mode) && $reserve_mode ? 1 : 0 }}">
 
                         <!-- Note -->
                         <div class="form-group {{ $errors->has('note') ? 'error' : '' }}">
@@ -298,4 +309,64 @@
 
 @section('moar_scripts')
     @include('partials/assets-assigned')
+    <script>
+    // Run only after the whole page is loaded, so inputs definitely exist
+    window.addEventListener('load', function() {
+        const checkoutInput  = document.querySelector('input[name="checkout_at"]');
+        const expectedInput  = document.querySelector('input[name="expected_checkin"]');
+
+        if (!checkoutInput || !expectedInput) {
+            // On some pages these fields may not exist – just bail quietly
+            return;
+        }
+
+        // Parse exactly YYYY-MM-DD, which matches your placeholder
+        function parseIsoDate(val) {
+            if (!val) return null;
+            const m = val.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (!m) return null;
+            const year  = parseInt(m[1], 10);
+            const month = parseInt(m[2], 10) - 1; // JS months are 0-based
+            const day   = parseInt(m[3], 10);
+            const d = new Date(year, month, day);
+            // Basic sanity check
+            if (d.getFullYear() !== year || d.getMonth() !== month || d.getDate() !== day) {
+                return null;
+            }
+            return d;
+        }
+
+        function updateExpectedFromCheckout() {
+            const val = checkoutInput.value;
+            const d = parseIsoDate(val);
+            if (!d) return;
+
+            const twoWeeks = new Date(d.getTime());
+            twoWeeks.setDate(twoWeeks.getDate() + 14);
+
+            if (!expectedInput.dataset.userEdited) {
+                expectedInput.value = twoWeeks.toISOString().slice(0, 10);
+            }
+        }
+
+        // When user manually changes expected checkin, mark as "user edited"
+        expectedInput.addEventListener('change', function() {
+            expectedInput.dataset.userEdited = '1';
+        });
+
+        // Initial value (on page load)
+        updateExpectedFromCheckout();
+
+        // Watch for changes to checkout_at value every 500ms and react
+        let lastCheckoutVal = checkoutInput.value;
+
+        setInterval(function() {
+            const currentVal = checkoutInput.value;
+            if (currentVal !== lastCheckoutVal) {
+                lastCheckoutVal = currentVal;
+                updateExpectedFromCheckout();
+            }
+        }, 500);
+    });
+    </script>
 @stop
