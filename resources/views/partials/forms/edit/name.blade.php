@@ -5,7 +5,7 @@
         <input class="form-control" style="width:100%;" type="text" name="name" aria-label="name" id="name" value="{{ old('name', $item->name) }}"{!!  (Helper::checkIfRequired($item, 'name')) ? ' required' : '' !!} maxlength="191" />
         {!! $errors->first('name', '<span class="alert-msg" aria-hidden="true"><i class="fas fa-times" aria-hidden="true"></i> :message</span>') !!}
         <p class="help-block">
-        Use the assets full official manufacturer given model name.
+        Name for the subcategory.
     </p>
     </div>
     

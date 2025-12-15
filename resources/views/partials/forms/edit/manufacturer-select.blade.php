@@ -26,6 +26,9 @@
             @endif
 
         </select>
+        @if(!empty($helpText))
+        <p class="help-block">This is not the assets manufacturer. Only specify if the whole subcategory has the same manufacturer.</p>
+    @endif
     </div>
 
     <div class="col-md-1 col-sm-1 text-left">
