@@ -16,7 +16,17 @@
             <div class="row">
 
                 <div class="col-md-4 col-md-offset-4">
+                    @if ($snipeSettings->saml_enabled)
+                        <br><br>
+                        <a href="{{ route('saml.login') }}"
+                        class="btn btn-block btn-primary btn-lg">
+                            <i class="fa fa-university"></i>
+                            Login with UTU SSO
+                        </a>
 
+                        <div class="separator">{{ strtoupper(trans('general.or')) }}</div>
+                    @endif
+                    
                     @if (($snipeSettings->google_login=='1') && ($snipeSettings->google_client_id!='') && ($snipeSettings->google_client_secret!=''))
 
                         <br><br>

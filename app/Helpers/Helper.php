@@ -109,6 +109,17 @@ class Helper
         }
     }
 
+    public static function userGuideUrl(): ?string
+    {
+        $path = public_path('user-guide/user-guide.pdf');
+        if (file_exists($path)) {
+            return asset('user-guide/user-guide.pdf');
+        }
+
+        return null;
+    }
+
+
     /**
      * The importer has formatted number strings since v3,
      * so the value might be a string, or an integer.

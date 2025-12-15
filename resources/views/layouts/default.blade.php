@@ -1580,7 +1580,17 @@
                             </li>
                         @endcan
 
+                        @php($userGuideUrl = \App\Helpers\Helper::userGuideUrl())
 
+                        @if($userGuideUrl)
+                            <li class="header"></li>
+                            <li>
+                                <a href="{{ $userGuideUrl }}" target="_blank" rel="noopener">
+                                    <i class="fa fa-file-pdf-o"></i>
+                                    <span>User guide</span>
+                                </a>
+                            </li>
+                        @endif
                     </ul>
                 </section>
                 <!-- /.sidebar -->
