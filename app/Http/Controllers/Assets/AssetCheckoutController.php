@@ -58,17 +58,105 @@ class AssetCheckoutController extends Controller
 
         // NEW: auto-convert due reservations into checkouts
         $asset->autoCheckoutActiveReservationIfDue();
-        $asset->refresh(); // reload latest assigned_to etc
+        try {
+            $asset->autoCheckoutActiveReservationIfDue();
+        } catch (\Throwable $e) {
+            \Log::error('autoCheckoutActiveReservationIfDue failed', [
+                'asset_id' => $asset->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        // Reload safely
+        $asset = $asset->fresh();
         
+        
+
+        // -------------------------
+        // Compute date constraints
+        // -------------------------
+
         if ($reserveMode || $asset->availableForCheckout()) {
-            
+
+            $today = Carbon::today();
+
+            //Get reservations of this asset
+            $reservations = AssetReservation::where('asset_id', $asset->id)
+                ->where('status', 'active')
+                ->get();
+
+            //Check witch days are reserved
+            $isReservedDay = function (Carbon $day) use ($reservations): bool {
+                foreach ($reservations as $r) {
+                    $from = Carbon::parse($r->reserved_from)->startOfDay();
+                    $to   = Carbon::parse($r->reserved_until ?? $r->reserved_from)->startOfDay();
+                    if ($day->betweenIncluded($from, $to)) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+
+            // -------------------------
+            // Default start date
+            // -------------------------
+            if ($reserveMode) {
+                $minStart = $today->copy()->addDay(); // tomorrow
+
+                // if currently checked out into today/future, start must be day after expected_checkin
+                if (!empty($asset->expected_checkin)) {
+                    $expected = Carbon::parse($asset->expected_checkin)->startOfDay();
+                    if ($expected->gte($today)) {
+                        $minStart = $expected->copy()->addDay();
+                    }
+                }
+
+                $start = $minStart->copy();
+                for ($i = 0; $i < 366; $i++) {
+                    if (!$isReservedDay($start)) {
+                        break;
+                    }
+                    $start->addDay();
+                }
+            } else {
+                // checkout always starts today (and checkout is only possible if availableForCheckout)
+                $start = $today->copy();
+            }
+
+            // -------------------------
+            // Default end date (continuous free window, max 14 days)
+            // -------------------------
+            $idealEnd = $start->copy()->addWeeks(2);
+            $end = $idealEnd->copy();
+
+            $cursor = $start->copy();
+            while ($cursor->lte($idealEnd)) {
+                if ($isReservedDay($cursor)) {
+                    $end = $cursor->copy()->subDay();
+                    break;
+                }
+                $cursor->addDay();
+            }
+
+            if ($end->lt($start)) {
+                $end = $start->copy();
+            }
+
+            $defaultCheckoutAt = $start->toDateString();
+            $defaultExpectedCheckin = $end->toDateString();
+            $calendarRanges = $asset->calendarBlockedRanges();
 
             return view('hardware/checkout', compact('asset'))
                 ->with('statusLabel_list', Helper::deployableStatusLabelList())
                 ->with('table_name', 'Assets')
                 ->with('item', $asset)
-                ->with('reserve_mode', $reserveMode);
+                ->with('calendarRanges', $calendarRanges)
+                ->with('reserve_mode', $reserveMode)
+                ->with('defaultCheckoutAt', $defaultCheckoutAt)
+                ->with('defaultExpectedCheckin', $defaultExpectedCheckin);
         }
+
+        
 
         return redirect()->route('hardware.index')
             ->with('error', trans('admin/hardware/message.checkout.not_available'));

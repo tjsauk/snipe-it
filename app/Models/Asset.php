@@ -24,6 +24,7 @@ use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Watson\Validating\ValidatingTrait;
+use Carbon\CarbonPeriod;
 
 /**
  * Model for Assets.
@@ -132,6 +133,45 @@ class Asset extends Depreciable
         'assigned_asset'    => ['integer', 'nullable', 'exists:assets,id,deleted_at,NULL']
     ];
 
+    
+    /**
+     * Handles blocked timeperiods for the updated calender
+     *
+     */
+    public function calendarBlockedRanges(): array
+    {
+        $ranges = [];
+
+        // Current checkout window (if checked out)
+        if ($this->assigned_to) {
+            // Prefer last_checkout as start (that matches your overlapsOngoingCheckout logic)
+            $start = $this->last_checkout
+                ? Carbon::parse($this->last_checkout)->toDateString()
+                : Carbon::today()->toDateString();
+
+            // End is expected_checkin if exists, otherwise open-ended
+            $end = $this->expected_checkin
+                ? Carbon::parse($this->expected_checkin)->toDateString()
+                : null;
+
+            $ranges[] = [
+                'from' => $start,
+                'to'   => $end,
+                'type' => 'checkout',
+            ];
+        }
+
+        // Active reservations
+        foreach ($this->activeReservations()->get() as $res) {
+            $ranges[] = [
+                'from' => Carbon::parse($res->reserved_from)->toDateString(),
+                'to'   => Carbon::parse($res->reserved_until ?? $res->reserved_from)->toDateString(),
+                'type' => 'reservation',
+            ];
+        }
+
+        return $ranges;
+    }
 
     /**
      * The attributes that are mass assignable.
@@ -524,7 +564,7 @@ class Asset extends Depreciable
      * - expected_checkin = reserved_until (if any)
      * - reservation status -> 'fulfilled'
      */
-    public function autoCheckoutActiveReservationIfDue(): void
+   public function autoCheckoutActiveReservationIfDue(): void
     {
         $today = Carbon::today();
 
@@ -536,10 +576,10 @@ class Asset extends Depreciable
         // Find the first active reservation whose window includes today
         $reservation = $this->reservations()
             ->where('status', 'active')
-            ->whereDate('reserved_from', '<=', $today)
+            ->whereDate('reserved_from', '<=', $today->toDateString())
             ->where(function ($q) use ($today) {
                 $q->whereNull('reserved_until')
-                  ->orWhereDate('reserved_until', '>=', $today);
+                ->orWhereDate('reserved_until', '>=', $today->toDateString());
             })
             ->orderBy('reserved_from')
             ->first();
@@ -548,24 +588,41 @@ class Asset extends Depreciable
             return;
         }
 
-        // We need a logged-in admin user to perform the checkout action
-        $admin = auth()->user();
-        if (!$admin) {
-            return;
-        }
-
+        // Target user is the reservation owner
         $targetUser = $reservation->user;
         if (!$targetUser) {
             return;
         }
 
-        // Use the reserved window as checkout & expected checkin
-        $checkoutAt = Carbon::parse($reservation->reserved_from)->toDateString();
-        $expected   = $reservation->reserved_until
+        // Determine the "admin actor" for logs/auditing.
+        // Prefer the currently authenticated user if present,
+        // otherwise fall back to a system user (first superuser).
+        $admin = auth()->user();
+        if (!$admin) {
+            $admin = \App\Models\User::query()
+                ->where('permissions', 'like', '%"superuser"%') // common pattern in Snipe-IT
+                ->orWhere('permissions', 'like', '%superuser%')
+                ->first();
+        }
+
+        // If we cannot find an admin actor, we still should not hard-fail the app.
+        // But checkOut() requires an admin user, so we must bail safely.
+        if (!$admin) {
+            \Log::warning('autoCheckoutActiveReservationIfDue: no admin actor found', [
+                'asset_id' => $this->id,
+                'reservation_id' => $reservation->id,
+            ]);
+            return;
+        }
+
+        // Use TODAY as checkout start when converting (reservation is "due now")
+        $checkoutAt = $today->toDateString();
+
+        // Expected checkin is reservation end (if any); if null, you can pick a default
+        $expected = $reservation->reserved_until
             ? Carbon::parse($reservation->reserved_until)->toDateString()
             : null;
 
-        // Perform a normal checkout, so logs, emails etc behave as usual
         $success = $this->checkOut(
             $targetUser,
             $admin,
@@ -576,10 +633,15 @@ class Asset extends Depreciable
         );
 
         if ($success) {
+            // Mark fulfilled and remove it so it no longer shows as an active reservation
             $reservation->status = 'fulfilled';
             $reservation->save();
+
+            // You have soft deletes in the table (deleted_at), so delete() is safe
+            $reservation->delete();
         }
     }
+
 
     /**
      * For UI later: deployable + has active reservation ⇒ "yellow reserved" badge.

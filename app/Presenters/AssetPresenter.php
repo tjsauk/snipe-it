@@ -340,6 +340,28 @@ class AssetPresenter extends Presenter
             ];
         }
 
+        // --- New reservation-related columns for list view ---
+
+        // Simple icon showing whether any active reservation exists
+        $layout[] = [
+            'field'      => 'reservation_icon',
+            'title'      => '',
+            'sortable'   => false,
+            'searchable' => false,
+            'switchable' => true,
+            'class'      => 'text-center',
+        ];
+
+        // Actions: Reserve / Cancel / Manage
+        $layout[] = [
+            'field'      => 'reservation_actions',
+            'title'      => 'Reservations',
+            'sortable'   => false,
+            'searchable' => false,
+            'switchable' => true,
+            'class'      => 'text-nowrap',
+        ];
+
         $layout[] = [
             'field' => 'checkincheckout',
             'searchable' => false,
@@ -360,6 +382,7 @@ class AssetPresenter extends Presenter
             'formatter' => 'hardwareActionsFormatter',
             'printIgnore' => true,
         ];
+
 
         return json_encode($layout);
     }

@@ -461,6 +461,28 @@ class AssetsController extends Controller
         $total = $assets->count();
         $assets = $assets->skip($offset)->take($limit)->get();
 
+        // ------------------------------------------------------------
+        // Auto-convert reservations that are due (for the assets on this page)
+        // ------------------------------------------------------------
+        foreach ($assets as $key => $asset) {
+            try {
+                $beforeAssignedTo = $asset->assigned_to;
+
+                $asset->autoCheckoutActiveReservationIfDue();
+
+                // If it changed from unassigned to assigned, reload so transformer sees updated state
+                if (empty($beforeAssignedTo) && !empty($asset->assigned_to)) {
+                    $assets[$key] = $asset->fresh();
+                }
+            } catch (\Throwable $e) {
+                \Log::warning('autoCheckoutActiveReservationIfDue failed in api assets index', [
+                    'asset_id' => $asset->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+
 
         /**
          * Include additional associated relationships

@@ -196,6 +196,59 @@ class AssetsTransformer
             }
 
         }
+
+        // --- Reservation icon & actions for list view ---
+
+        $currentUser = auth()->user();
+        $userId      = $currentUser ? $currentUser->id : null;
+
+        // Icon: show if any active reservation exists
+        $hasReservations = $asset->activeReservations()->count() > 0;
+
+        $array['reservation_icon'] = $hasReservations
+            ? '<i class="fa fa-calendar text-warning" title="Has active reservations"></i>'
+            : '';
+
+        // Actions column HTML:
+        $reserveHtml = '';
+        $cancelHtml  = '';
+        $manageHtml  = '';
+
+        // Reserve button (same rule as in view.blade)
+        if (
+            ($asset->assetstatus) &&
+            ($asset->assetstatus->deployable == '1') &&
+            ($asset->deleted_at == null)
+        ) {
+            $reserveUrl  = route('hardware.reserve.create', $asset->id) . '?reserve=1';
+            $reserveHtml = '<a href="'.$reserveUrl.'" class="btn btn-xs btn-warning">Reserve</a>';
+        }
+
+        // Cancel / Manage based on user type
+        if ($currentUser) {
+
+            // User's own reservation, if any
+            $userReservation = $userId ? $asset->activeReservationForUser($userId) : null;
+
+            // Is superuser?
+            $isSuper = method_exists($currentUser, 'isSuperUser') && $currentUser->isSuperUser();
+
+            if ($userReservation && ! $isSuper) {
+                // Normal user: cancel own reservation
+                $cancelUrl = route('hardware.reserve.destroy', [$asset->id, $userReservation->id]);
+                $cancelHtml = '<form method="POST" action="'.$cancelUrl.'" style="display:inline;">'
+                    .csrf_field()
+                    .method_field('DELETE')
+                    .'<button type="submit" class="btn btn-xs btn-default">Cancel</button>'
+                    .'</form>';
+            } elseif ($isSuper && $hasReservations) {
+                // Superuser: one "Manage" button
+                $manageUrl  = route('hardware.reserve.manage', $asset->id);
+                $manageHtml = '<a href="'.$manageUrl.'" class="btn btn-xs btn-default">Manage</a>';
+            }
+        }
+
+        $array['reservation_actions'] = trim($reserveHtml.' '.$cancelHtml.' '.$manageHtml);
         
         $array += $permissions_array;
 
