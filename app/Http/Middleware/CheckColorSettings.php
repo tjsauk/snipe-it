@@ -36,6 +36,10 @@ class CheckColorSettings
      */
     public function handle($request, Closure $next)
     {
+	// Always initialize defaults so variables exist even if settings/user missing.
+    	$nav_color = null;
+    	$link_dark_color = null;
+    	$link_light_color = null;
         if ($settings = Setting::getSettings()) {
             $nav_color = $settings->nav_link_color;
             $link_dark_color = $settings->link_dark_color;
