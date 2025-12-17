@@ -6,20 +6,17 @@ volumes:
 
 services:
   app:
-    image: snipe/snipe-it:${APP_VERSION:-v8.3.5}
+    build:
+      context: .
+    container_name: snipe-it-app
     restart: unless-stopped
     volumes:
-      - ./app:/var/www/html/app
-      - ./resources:/var/www/html/resources
-      - ./routes:/var/www/html/routes
-      - ./database:/var/www/html/database
       - storage:/var/lib/snipeit
     ports:
       - "${APP_PORT:-8000}:80"
     depends_on:
       db:
         condition: service_healthy
-        restart: true
     env_file:
       - .env
     
