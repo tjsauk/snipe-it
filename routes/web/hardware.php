@@ -49,6 +49,10 @@ Route::group(
                 ->push(trans('admin/hardware/general.requested'), route('assets.requested'))
             );
 
+	// Template search for hardware autofill (used by name-autocomplete)
+    Route::get('template-asset', [AssetsController::class, 'templateAsset'])
+	    ->name('hardware.template-asset');
+
         Route::get('audit/due', [AssetsController::class, 'dueForAudit'])
             ->name('assets.audit.due')
             ->breadcrumbs(fn (Trail $trail) =>

@@ -295,7 +295,37 @@ class Asset extends Depreciable
 
     }
 
+        /**
+     * All uploads from all assets that share the same name & model as this one.
+     */
+    public function sharedUploads()
+    {
+        if (!$this->name || !$this->model_id) {
+            return $this->uploads instanceof \Illuminate\Support\Collection
+                ? $this->uploads
+                : collect();
+        }
 
+        // Asset IDs that share both name AND model with this one
+        $assetIds = static::where('name', $this->name)
+            ->where('model_id', $this->model_id)
+            ->pluck('id');
+
+        // If no siblings, just return own uploads
+        if ($assetIds->isEmpty()) {
+            return $this->uploads instanceof \Illuminate\Support\Collection
+                ? $this->uploads
+                : collect();
+        }
+
+        // Use the Upload model used by Snipe-IT for file attachments
+        // (adjust namespace if different in your code)
+        return \App\Models\Upload::where('uploadable_type', Asset::class)
+            ->whereIn('uploadable_id', $assetIds)
+            ->get();
+    }
+
+    
 
     /**
      * This handles the custom field validation for assets

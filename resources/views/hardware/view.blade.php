@@ -160,6 +160,8 @@
                             {{ trans('general.files') }}
                             </span>
                             {!! ($asset->uploads->count() > 0 ) ? '<span class="badge badge-secondary">'.number_format($asset->uploads->count()).'</span>' : '' !!}
+
+
                         </a>
                     </li>
 
@@ -1498,13 +1500,17 @@
                             </div> <!-- /.row -->
                         </div> <!-- /.tab-pane history -->
 
-                        <div class="tab-pane fade" id="files">
-                            <div class="row{{ ($asset->uploads->count() > 0 ) ? '' : ' hidden-print' }}">
-                                <div class="col-md-12">
-                                    <x-filestable object_type="assets" :object="$asset" />
-                                </div> <!-- /.col-md-12 -->
-                            </div> <!-- /.row -->
-                        </div> <!-- /.tab-pane files -->
+                        
+
+    <div class="tab-pane fade" id="files">
+    <div class="row{{ ($asset->uploads->count() > 0 ) ? '' : ' hidden-print' }}>
+        <div class="col-md-12">
+            <x-filestable object_type="assets" :object="$asset" />
+        </div> <!-- /.col-md-12 -->
+    </div> <!-- /.row -->
+</div> <!-- /.tab-pane files -->
+
+
 
                         @if ($asset->model)
                             @can('view', $asset->model)

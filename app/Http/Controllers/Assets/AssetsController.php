@@ -31,6 +31,7 @@ use League\Csv\Reader;
 use Illuminate\Http\Response;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\JsonResponse;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use TypeError;
 
@@ -384,6 +385,8 @@ class AssetsController extends Controller
                 'display' => $settings->qr_code == '1',
                 'url' => route('qr_code/hardware', $asset),
             ];
+		//get shared uploads for all same-name assets
+	    
 
             return view('hardware/view', compact('asset', 'qr_code', 'settings'))
                 ->with('use_currency', $use_currency)->with('audit_log', $audit_log);
@@ -391,6 +394,100 @@ class AssetsController extends Controller
 
         return redirect()->route('hardware.index')->with('error', trans('admin/hardware/message.does_not_exist'));
     }
+
+        /**
+     * AJAX: search assets by name for template selection.
+     * Returns a small list of candidate assets for autofill.
+     */
+    public function templateSearch(Request $request) : JsonResponse
+    {
+        $this->authorize('create', Asset::class);
+
+        $q = trim($request->get('q', ''));
+
+        if ($q === '') {
+            return response()->json([]);
+        }
+
+        // Find up to 10 assets with name LIKE q, eager-load model & supplier
+        $assets = Asset::with(['model', 'supplier'])
+            ->where('name', 'like', '%' . $q . '%')
+            ->orderBy('name')
+            ->limit(10)
+            ->get();
+
+        $results = $assets->map(function (Asset $asset) {
+            $labelParts = [
+                $asset->name,
+            ];
+
+            if ($asset->model && $asset->model->name) {
+                $labelParts[] = 'Model: ' . $asset->model->name;
+            }
+
+            if ($asset->asset_tag) {
+                $labelParts[] = 'Tag: ' . $asset->asset_tag;
+            }
+
+            if ($asset->serial) {
+                $labelParts[] = 'Serial: ' . $asset->serial;
+            }
+
+            return [
+                'id'         => $asset->id,
+                'label'      => implode(' | ', $labelParts),
+                'name'       => $asset->name,
+                'model_id'   => $asset->model_id,
+                'model_name' => optional($asset->model)->name,
+            ];
+        });
+
+        return response()->json($results);
+    }
+
+     public function templateAsset(Request $request)
+{
+    // User must be allowed to read assets
+    $this->authorize('viewAny', Asset::class);
+
+    $q = trim($request->get('q', ''));
+
+    if ($q === '') {
+        return response()->json([]);
+    }
+
+    // Search by name prefix – adjust logic later if needed
+    $assets = Asset::hardware()
+        ->where('name', 'like', $q.'%')
+        ->orderBy('name')
+        ->take(10)
+        ->get([
+            'id',
+            'name',
+            'model_id',
+            'model_number',
+            'supplier_id',
+            'image',
+            'serial',
+            'asset_tag',
+        ]);
+
+    $results = $assets->map(function (Asset $asset) {
+        return [
+            'id'           => $asset->id,
+            'name'         => $asset->name,
+            'model_id'     => $asset->model_id,
+            'model_number' => $asset->model_number,
+            'supplier_id'  => $asset->supplier_id,
+            'image'        => $asset->image,
+            'serial'       => $asset->serial,
+            'asset_tag'    => $asset->asset_tag,
+        ];
+    });
+
+    return response()->json($results);
+}
+
 
     /**
      * Validate and process asset edit form.

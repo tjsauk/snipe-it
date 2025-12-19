@@ -125,81 +125,64 @@ class SamlController extends Controller
         // UTU JIT provisioning (create user on first SSO login)
         // -----------------------------
         try {
-            // The extractData() format can vary. We support both common shapes:
-            // 1) ['attributes' => ['uid' => ['foo'], ...]]
-            // 2) ['uid' => ['foo'], ...]
-            $attrs = $samlData['attributes'] ?? $samlData;
+            	$attrs = $samlData['attributes'] ?? $samlData;
+		// Helper: read attribute by either friendly name OR OID URN
+		$getAttr = function(array $attrs, string $friendly, string $oid) {
+    		if (!empty($attrs[$friendly][0])) return $attrs[$friendly][0];
+    		if (!empty($attrs[$oid][0])) return $attrs[$oid][0];
+    		return null;
+		};
 
-            $uid       = $attrs['uid'][0] ?? null; // short username
-            $givenName = $attrs['givenName'][0] ?? null;
-            $sn        = $attrs['sn'][0] ?? null;
-            $mail      = $attrs['mail'][0] ?? null;
-            $eppn      = $attrs['eduPersonPrincipalName'][0] ?? null;
+		$eppn      = $getAttr($attrs, 'eduPersonPrincipalName', 'urn:oid:1.3.6.1.4.1.5923.1.1.1.6');
+		$givenName = $getAttr($attrs, 'givenName', 'urn:oid:2.5.4.42');
+		$sn        = $getAttr($attrs, 'sn', 'urn:oid:2.5.4.4');
 
-            // Require the attributes you said you want
-            if (!$uid || !$givenName || !$sn || (!$mail && !$eppn)) {
-                return redirect()->route('login')
-                    ->with('error', 'SSO login succeeded but required user attributes are missing. Please contact the admin.');
-            }
+		// Require only what you said you want
+		if (!$eppn || !$givenName || !$sn) {
+    		return redirect()->route('login')
+        		->with('error', 'SSO login succeeded but required attributes (eduPersonPrincipalName, givenName, sn) are missing. Please contact the admin.');
+		}
 
-            // Use ePPN for stable identification when available (mail can change)
-            $stableId = $eppn ?: $mail;
+		// Use ePPN as the Snipe-IT username
+		$username = $eppn;
 
-            // Allow only UTU accounts (adjust if needed)
-            if (!Str::endsWith(Str::lower($stableId), '@utu.fi')) {
-                return redirect()->route('login')
-                    ->with('error', 'SSO login is only allowed for utu.fi accounts.');
-            }
+		// Optional: basic domain sanity check (if you want it)
+		if (!Str::endsWith(Str::lower($username), '@utu.fi')) {
+    		return redirect()->route('login')
+        	->with('error', 'SSO login is only allowed for utu.fi accounts.');
+		}
 
-            // Look up existing user (prefer stable id in employee_num)
-            $user = null;
-            if ($eppn) {
-                $user = User::where('employee_num', $eppn)->first();
-            }
+		// Look up existing user by username (eppn)
+		$user = User::where('username', $username)->first();
 
-            if (!$user) {
-                // fallback by username or email
-                $user = User::where('username', $uid)->first();
-            }
-            if (!$user && $mail) {
-                $user = User::where('email', $mail)->first();
-            }
+		if (!$user) {
+    			$newUsersGroup = Group::where('name', 'New Users')->first();
 
-            // Create if not exists
-            if (!$user) {
-                $newUsersGroup = Group::where('name', 'New Users')->first();
+    			if (!$newUsersGroup) {
+        			return redirect()->route('login')
+            			->with('error', 'Account creation failed: required group "New Users" is missing. Please contact the admin.');
+    			}
 
-                if (!$newUsersGroup) {
-                    return redirect()->route('login')
-                        ->with('error', 'Account creation failed: required group "New Users" is missing. Please contact the admin.');
-                }
+    			$user = new User();
+    			$user->first_name = $givenName;
+    			$user->last_name  = $sn;
+    			$user->username   = $username;
 
-                $user = new User();
-                $user->first_name   = $givenName;
-                $user->last_name    = $sn;
-                $user->username     = $uid;
-                $user->email        = $mail ?: $eppn;     // store mail if provided
-                $user->employee_num = $eppn ?: null;      // stable UTU identifier
-                $user->activated    = 1;
+    			// Optional fields: leave blank unless you decide to request mail later
+    			$user->email = $eppn;
 
-                // Random password (SSO users won't use it, but keeps the record valid)
-                $user->password = Hash::make(Str::random(64));
+    			$user->activated = 1;
+    			$user->password  = Hash::make(Str::random(64));
+    			$user->save();
 
-                $user->save();
-
-                // Attach the "New Users" group (no rights)
-                $user->groups()->syncWithoutDetaching([$newUsersGroup->id]);
-            } else {
-                // Optional: keep data fresh on each SSO login
-                $dirty = false;
-
-                if ($eppn && $user->employee_num !== $eppn) { $user->employee_num = $eppn; $dirty = true; }
-                if ($mail && $user->email !== $mail) { $user->email = $mail; $dirty = true; }
-                if ($givenName && $user->first_name !== $givenName) { $user->first_name = $givenName; $dirty = true; }
-                if ($sn && $user->last_name !== $sn) { $user->last_name = $sn; $dirty = true; }
-
-                if ($dirty) { $user->save(); }
-            }
+    			$user->groups()->syncWithoutDetaching([$newUsersGroup->id]);
+		} else {
+    			// Keep names updated
+    			$dirty = false;
+    			if ($givenName && $user->first_name !== $givenName) { $user->first_name = $givenName; $dirty = true; }
+    			if ($sn && $user->last_name !== $sn) { $user->last_name = $sn; $dirty = true; }
+    			if ($dirty) { $user->save(); }
+			}
 
         } catch (\Throwable $e) {
             Log::warning('SSO JIT provisioning failed: '.$e->getMessage());

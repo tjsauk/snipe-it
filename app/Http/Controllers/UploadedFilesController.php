@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Helpers\StorageHelper;
 use App\Http\Requests\UploadFileRequest;
 use App\Models\Actionlog;
+use App\Models\Asset;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -55,7 +56,21 @@ class UploadedFilesController extends Controller
                 $file_name = $request->handleFile(self::$map_storage_path[$object_type], self::$map_file_prefix[$object_type].'-'.$object->id, $file);
                 $files[] = $file_name;
                 $object->logUpload($file_name, $request->get('notes'));
+	    
+	            //EXTRA: if this is an asset, also log for other assets
+        // that share the same NAME and MODEL.
+        if ($object_type === 'assets' && $object instanceof Asset) {
+            $siblings = Asset::where('name', $object->name)
+                ->where('model_id', $object->model_id)
+                ->where('id', '!=', $object->id)
+                ->get();
+
+            foreach ($siblings as $sibling) {
+                // Creates Actionlog rows for each sibling using the same filename
+                $sibling->logUpload($file_name, $request->get('notes'));
             }
+        }
+    }
 
             $files = Actionlog::select('action_logs.*')->where('action_type', '=', 'uploaded')
                 ->where('item_type', '=', self::$map_object_type[$object_type])
@@ -130,32 +145,71 @@ class UploadedFilesController extends Controller
     {
 
         // Check the permissions to make sure the user can view the object
-        $object = self::$map_object_type[$object_type]::withTrashed()->find($id);
-        $this->authorize('update', self::$map_object_type[$object_type]);
+    $object = self::$map_object_type[$object_type]::withTrashed()->find($id);
+    $this->authorize('update', self::$map_object_type[$object_type]);
 
-        if (!$object) {
-            return redirect()->back()->withFragment('files')->with('error',trans('general.file_upload_status.invalid_object'));
+    if (!$object) {
+        return redirect()->back()->withFragment('files')
+            ->with('error', trans('general.file_upload_status.invalid_object'));
+    }
+
+    // Check for the file log on THIS object
+    $log = Actionlog::where('id', $file_id)
+        ->where('item_type', self::$map_object_type[$object_type])
+        ->where('item_id', $object->id)
+        ->first();
+
+    if (! $log) {
+        // The file doesn't seem to exist for this object
+        return redirect()->back()->withFragment('files')
+            ->with('error', trans_choice('general.file_upload_status.delete.error', 1));
+    }
+
+    // Keep the filename so we can remove all shared references
+    $filename   = $log->filename;
+    $itemType   = self::$map_object_type[$object_type];
+    $storageKey = self::$map_storage_path[$object_type].'/'.$filename;
+
+    // 🔹 Determine all asset IDs that share name+model with this one (for assets only)
+    if ($object_type === 'assets' && $object instanceof Asset) {
+        $assetIds = Asset::where('name', $object->name)
+            ->where('model_id', $object->model_id)
+            ->pluck('id');
+    } else {
+        // For non-asset object types, just use the single object ID
+        $assetIds = collect([$object->id]);
+    }
+
+    // 🔹 Delete the underlying file once (if it exists)
+    if (Storage::exists($storageKey)) {
+        Storage::delete($storageKey);
+    }
+
+    // 🔹 Find ALL logs for this filename across those sibling objects
+    $logs = Actionlog::where('item_type', $itemType)
+        ->whereIn('item_id', $assetIds)
+        ->where('filename', $filename)
+        ->get();
+
+    foreach ($logs as $logEntry) {
+        // For assets, get the matching asset to log deletion correctly
+        if ($object_type === 'assets' && $object instanceof Asset) {
+            $logAsset = Asset::withTrashed()->find($logEntry->item_id);
+        } else {
+            $logAsset = $object;
         }
 
-
-        // Check for the file
-        $log = Actionlog::where('id',$file_id)->where('item_type', self::$map_object_type[$object_type])
-            ->where('item_id', $object->id)->first();
-
-        if ($log) {
-            // Check the file actually exists, and delete it
-            if (Storage::exists(self::$map_storage_path[$object_type].'/'.$log->filename)) {
-                Storage::delete(self::$map_storage_path[$object_type].'/'.$log->filename);
-            }
-            // Delete the record of the file
-            if ($log->logUploadDelete($object, $log->filename)) {
-                return redirect()->back()->withFragment('files')->with('success', trans_choice('general.file_upload_status.delete.success', 1));
-            }
-
+        if ($logAsset && method_exists($logEntry, 'logUploadDelete')) {
+            // Use Snipe-IT's own helper to log the delete
+            $logEntry->logUploadDelete($logAsset, $filename);
+        } else {
+            // Fallback: just remove the log row
+            $logEntry->delete();
         }
+    }
 
-        // The file doesn't seem to really exist, so report an error
-        return redirect()->back()->withFragment('files')->with('success', trans_choice('general.file_upload_status.delete.error', 1));
+    return redirect()->back()->withFragment('files')
+        ->with('success', trans_choice('general.file_upload_status.delete.success', 1));
 
     }
 

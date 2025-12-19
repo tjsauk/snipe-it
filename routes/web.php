@@ -31,6 +31,7 @@ use App\Livewire\Importer;
 use App\Models\ReportTemplate;
 use Illuminate\Support\Facades\Route;
 use Tabuna\Breadcrumbs\Trail;
+use App\Http\Controllers\Assets\AssetsController;
 
 
 Route::group(['middleware' => 'auth'], function () {
@@ -464,7 +465,10 @@ Route::group(['prefix' => 'account', 'middleware' => ['auth']], function () {
 });
 
 Route::group(['middleware' => ['auth']], function () {
-    Route::post('notes', [NotesController::class, 'store'])->name('notes.store');
+	Route::post('notes', [NotesController::class, 'store'])->name('notes.store');
+	// Template search for hardware autofill (used by name-autocomplete)
+    Route::get('hardware/template-asset', [AssetsController::class, 'templateAsset'])
+	    ->name('hardware.template-asset');
 });
 
 Route::group(['prefix' => 'reports', 'middleware' => ['auth']], function () {
