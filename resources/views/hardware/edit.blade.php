@@ -21,7 +21,10 @@
     
     
             @include ('partials.forms.edit.name-hardware', ['translated_name' => trans('admin/hardware/form.name')])
-
+        {{-- Name suggestions dropdown (name-only autocomplete) --}}
+        <div class="col-md-7 col-sm-12 col-md-offset-3" style="position:relative;">
+            <ul id="name_suggestions" class="list-group" style="display:none;"></ul>
+        </div>
 
     @include ('partials.forms.edit.supplier-select', ['translated_name' => trans('general.supplier'), 'fieldname' => 'supplier_id'])
 
@@ -458,135 +461,187 @@
         }
 
     });
+</script>
+<style>
+  /* Ensure dropdown is visible above other form controls */
+  #name_suggestions{
+      position: absolute;
+      top: 0;              /* since we placed it in a positioned wrapper right under the input */
+      left: 0;
+      right: 0;
+      margin-top: 4px;
+      z-index: 9999;
+      display: none;
+      max-height: 260px;
+      overflow-y: auto;
+
+      background: #fff !important;
+      border: 1px solid #ddd !important;
+      border-radius: 4px;
+  }
+
+  /* Force readable text even if theme overrides list-group colors */
+  #name_suggestions .list-group-item{
+      background: #fff !important;
+      color: #111 !important;
+  }
+
+  #name_suggestions .list-group-item:hover,
+  #name_suggestions .list-group-item:focus{
+      background: #f5f5f5 !important;
+      color: #111 !important;
+  }
+</style>
 
 
+<script>
+function setSelect2Value(selectId, value, text) {
+    var el = document.getElementById(selectId);
+    if (!el) return;
 
+    // If empty/missing -> clear
+    if (value === null || value === undefined || value === "") {
+        $(el).val(null).trigger('change');
+        return;
+    }
 
+    // If option doesn't exist (common with AJAX select2), inject it
+    var hasOption = Array.from(el.options).some(function (o) {
+        return String(o.value) === String(value);
+    });
+
+    if (!hasOption) {
+        var opt = new Option(text || String(value), value, true, true);
+        el.add(opt);
+    }
+
+    $(el).val(String(value)).trigger('change');
+}
+
+(function () {
+    var input    = document.getElementById('name');
+    var list     = document.getElementById('name_suggestions');
+    
+
+    if (!input || !list) return;
+
+    var searchUrl = "{{ route('hardware.template-asset') }}"; // returns JSON array
+    var detailUrlTemplate = "{{ route('hardware.template-asset.detail', ['asset' => '__ID__']) }}"; // returns JSON detail
+
+    function clearSuggestions() {
+        list.style.display = 'none';
+        list.innerHTML = '';
+    }
+
+    function applyTemplate(assetId) {
+        if (!assetId) return;
+
+        
+
+        var url = detailUrlTemplate.replace('__ID__', assetId);
+
+        fetch(url, {
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
+            }
+        })
+        .then(function (response) {
+            if (!response.ok) throw new Error('Template detail fetch failed');
+            return response.json();
+        })
+        .then(function (data) {
+            // Always set name
+            if (data.name) input.value = data.name;
+
+            // Autofill fields (IDs MUST match your page)
+            setSelect2Value('model_select_id', data.model_id, data.model_name);
+            setSelect2Value('supplier_select', data.supplier_id, data.supplier_name);
+            setSelect2Value('rtd_location_id_location_select', data.rtd_location_id, data.rtd_location_name);
+            setSelect2Value('company_select', data.company_id, data.company_name);
+
+            // Status: if your status select doesn't have id="status_select_id",
+            // replace this line with the correct id OR use the class fallback below.
+            setSelect2Value('status_select_id', data.status_id, data.status_name);
+
+            // Class fallback if Snipe-IT uses class="status_id" instead of id:
+            // if (data.status_id !== undefined && data.status_id !== null) {
+            //     $('.status_id').val(String(data.status_id)).trigger('change');
+            // }
+
+            clearSuggestions();
+            input.focus();
+        })
+        .catch(function (e) {
+            console.error(e);
+        });
+    }
+
+    function renderSuggestions(items) {
+        clearSuggestions();
+        if (!items || !items.length) return;
+
+        items.forEach(function (item) {
+            var li = document.createElement('li');
+            li.className = 'list-group-item list-group-item-action';
+            li.style.cursor = 'pointer';
+
+            var label = item.label || (item.name + (item.asset_tag ? ' (' + item.asset_tag + ')' : ''));
+            li.textContent = label;
+
+            li.addEventListener('click', function () {
+                // THIS is the key change: call applyTemplate
+                applyTemplate(item.id);
+            });
+
+            list.appendChild(li);
+        });
+
+        list.style.display = 'block';
+    }
+
+    var typingTimer = null;
+
+    input.addEventListener('input', function () {
+        var q = input.value.trim();
+        clearSuggestions();
+        
+
+        if (q.length < 2) return;
+        if (typingTimer) clearTimeout(typingTimer);
+
+        typingTimer = setTimeout(function () {
+            fetch(searchUrl + '?q=' + encodeURIComponent(q), {
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json'
+                }
+            })
+            .then(function (response) {
+                if (!response.ok) return [];
+                return response.json();
+            })
+            .then(function (data) {
+                if (!Array.isArray(data)) data = [];
+                renderSuggestions(data);
+            })
+            .catch(function () {
+                clearSuggestions();
+            });
+        }, 250);
+    });
+
+    document.addEventListener('click', function (e) {
+        if (!list.contains(e.target) && e.target !== input) clearSuggestions();
+    });
+
+    input.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') clearSuggestions();
+    });
+})();
 </script>
 
-    <script>
-        (function () {
-            var $input      = $('#asset-name-input');
-            var $list       = $('#asset-name-suggestions');
-            var $templateId = $('#template-asset-id');
-            var typingTimer = null;
 
-            function clearSuggestions() {
-                $list.empty().hide();
-            }
-
-            function applyTemplate(assetId) {
-                if (!assetId) {
-                    return;
-                }
-
-                $templateId.val(assetId);
-
-                $.getJSON("{{ route('hardware.template-asset', ['asset' => '__ID__']) }}".replace('__ID__', assetId), function (data) {
-                    // One-shot autofill of fields (user can still change afterwards).
-                    // Do NOT touch asset tag or serial.
-
-                    if (data.name) {
-                        $input.val(data.name);
-                    }
-
-                    if (data.model_id) {
-                        $('#model_id').val(data.model_id).change();
-                    }
-
-                    if (data.supplier_id) {
-                        $('#supplier_id').val(data.supplier_id).change();
-                    }
-
-                    if (data.category_id) {
-                        $('#category_id').val(data.category_id).change();
-                    }
-
-                    if (data.location_id) {
-                        $('#location_id').val(data.location_id).change();
-                    }
-
-                    if (data.company_id) {
-                        $('#company_id').val(data.company_id).change();
-                    }
-
-                    // Show hint about shared files
-                    var $fileHint = $('#shared-files-hint');
-                    if ($fileHint.length === 0) {
-                        var $fileGroup = $('#file-upload-group');
-                        if ($fileGroup.length) {
-                            $fileHint = $('<div id="shared-files-hint" class="text-muted small mt-1"></div>');
-                            $fileGroup.append($fileHint);
-                        }
-                    }
-
-                    if ($fileHint.length && typeof data.files_count !== 'undefined') {
-                        if (data.files_count > 0) {
-                            $fileHint.text(
-                                'User guides/files (' + data.files_count + ') from asset "' +
-                                data.name + '" will also be visible here (shared by name + model).'
-                            );
-                        } else {
-                            $fileHint.text(
-                                'No existing shared files were found for this name/model.'
-                            );
-                        }
-                    }
-                });
-
-                clearSuggestions();
-            }
-
-            function renderSuggestions(items) {
-                clearSuggestions();
-
-                if (!items || !items.length) {
-                    return;
-                }
-
-                items.forEach(function (item) {
-                    var $li = $('<li class="list-group-item list-group-item-action" style="cursor:pointer;"></li>');
-                    $li.text(item.label);
-                    $li.on('click', function () {
-                        applyTemplate(item.id);
-                    });
-                    $list.append($li);
-                });
-
-                $list.show();
-            }
-
-            $input.on('keyup', function () {
-                var q = $input.val();
-
-                // User is editing; clear any previously chosen template id
-                $templateId.val('');
-                clearSuggestions();
-
-                // Only start searching after 2 characters
-                if (!q || q.length < 2) {
-                    return;
-                }
-
-                if (typingTimer) {
-                    clearTimeout(typingTimer);
-                }
-
-                typingTimer = setTimeout(function () {
-                    $.getJSON("{{ route('hardware.template-search') }}", { q: q }, function (data) {
-                        renderSuggestions(data);
-                    });
-                }, 300);
-            });
-
-            // Hide dropdown when clicking elsewhere
-            $(document).on('click', function (e) {
-                if (!$(e.target).closest('#asset-name-input, #asset-name-suggestions').length) {
-                    clearSuggestions();
-                }
-            });
-        })();
-    </script>
 
             
 @stop

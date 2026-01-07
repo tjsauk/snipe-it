@@ -395,59 +395,59 @@ class AssetsController extends Controller
         return redirect()->route('hardware.index')->with('error', trans('admin/hardware/message.does_not_exist'));
     }
 
-        /**
-     * AJAX: search assets by name for template selection.
-     * Returns a small list of candidate assets for autofill.
+    /**
+     * AJAX: search assets by name for template autofill.
+     *
+     * Route: hardware/template-search
+     *
+     * Returns a simple array:
+     * [
+     *   { "id": 1, "label": "Laptop ABC (ASSET123)" },
+     *   ...
+     * ]
      */
     public function templateSearch(Request $request) : JsonResponse
     {
-        $this->authorize('create', Asset::class);
-
         $q = trim($request->get('q', ''));
 
-        if ($q === '') {
+        if (strlen($q) < 2) {
             return response()->json([]);
         }
 
-        // Find up to 10 assets with name LIKE q, eager-load model & supplier
-        $assets = Asset::with(['model', 'supplier'])
+        $assets = Asset::query()
+            ->select('id', 'name', 'asset_tag')
             ->where('name', 'like', '%' . $q . '%')
             ->orderBy('name')
             ->limit(10)
             ->get();
 
-        $results = $assets->map(function (Asset $asset) {
-            $labelParts = [
-                $asset->name,
-            ];
+        $results = $assets->map(function ($asset) {
+            $label = $asset->name;
 
-            if ($asset->model && $asset->model->name) {
-                $labelParts[] = 'Model: ' . $asset->model->name;
-            }
-
-            if ($asset->asset_tag) {
-                $labelParts[] = 'Tag: ' . $asset->asset_tag;
-            }
-
-            if ($asset->serial) {
-                $labelParts[] = 'Serial: ' . $asset->serial;
+            if (!empty($asset->asset_tag)) {
+                $label .= ' (' . $asset->asset_tag . ')';
             }
 
             return [
-                'id'         => $asset->id,
-                'label'      => implode(' | ', $labelParts),
-                'name'       => $asset->name,
-                'model_id'   => $asset->model_id,
-                'model_name' => optional($asset->model)->name,
+                'id'    => $asset->id,
+                'label' => $label,
             ];
         });
 
         return response()->json($results);
     }
 
-     public function templateAsset(Request $request)
+        /**
+     * AJAX search for existing assets to use as templates in the name autocomplete.
+     *
+     * Route: GET hardware/template-asset
+     * Query param: ?q=partial_name
+     *
+     * Returns JSON: [{id, name, asset_tag}, ...]
+     */
+    public function templateAsset(Request $request)
 {
-    // User must be allowed to read assets
+    // Optional: basic authz
     $this->authorize('viewAny', Asset::class);
 
     $q = trim($request->get('q', ''));
@@ -456,38 +456,67 @@ class AssetsController extends Controller
         return response()->json([]);
     }
 
-    // Search by name prefix – adjust logic later if needed
-    $assets = Asset::hardware()
-        ->where('name', 'like', $q.'%')
+    $assets = Asset::query()
+        ->where('name', 'like', '%' . $q . '%')
         ->orderBy('name')
-        ->take(10)
-        ->get([
-            'id',
-            'name',
-            'model_id',
-            'model_number',
-            'supplier_id',
-            'image',
-            'serial',
-            'asset_tag',
-        ]);
+        ->limit(10)
+        ->get(['id', 'name', 'asset_tag']);
 
-    $results = $assets->map(function (Asset $asset) {
+    $results = $assets->map(function ($asset) {
         return [
-            'id'           => $asset->id,
-            'name'         => $asset->name,
-            'model_id'     => $asset->model_id,
-            'model_number' => $asset->model_number,
-            'supplier_id'  => $asset->supplier_id,
-            'image'        => $asset->image,
-            'serial'       => $asset->serial,
-            'asset_tag'    => $asset->asset_tag,
+            'id'        => $asset->id,
+            'name'      => $asset->name,
+            'asset_tag' => $asset->asset_tag,
+            'label'     => trim(
+                $asset->name .
+                ($asset->asset_tag ? ' (' . $asset->asset_tag . ')' : '')
+            ),
         ];
     });
 
-    return response()->json($results);
+    return response()->json($results->values());
 }
 
+public function templateAssetDetail(Asset $asset)
+{
+    $this->authorize('view', $asset);
+
+    // Load related entities for display names.
+    // Relationship names can vary by Snipe-IT version; these are common.
+    $asset->loadMissing([
+        'uploads',
+        'model',
+        'supplier',
+        'company',
+        'statuslabel',
+        'rtd_location',   // common name in Snipe-IT
+    ]);
+
+    return response()->json([
+        'id'   => $asset->id,
+        'name' => $asset->name,
+
+        // IDs (what you already had)
+        'model_id'       => $asset->model_id,
+        'supplier_id'    => $asset->supplier_id,
+        'status_id'      => $asset->status_id,
+        'company_id'     => $asset->company_id,
+        'rtd_location_id'=> $asset->rtd_location_id,   // IMPORTANT: matches your select name/id
+
+        // Optional: keep old key if your JS ever used it
+        'location_id'    => $asset->location_id,
+
+        // Human-readable names (needed for Select2 display)
+        'model_name'        => optional($asset->model)->name,
+        'supplier_name'     => optional($asset->supplier)->name,
+        'status_name'       => optional($asset->statuslabel)->name,
+        'company_name'      => optional($asset->company)->name,
+        'rtd_location_name' => optional($asset->rtd_location)->name,
+
+        // how many files this template has
+        'files_count' => $asset->uploads ? $asset->uploads->count() : 0,
+    ]);
+}
 
     /**
      * Validate and process asset edit form.

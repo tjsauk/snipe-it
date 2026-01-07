@@ -53,6 +53,11 @@ Route::group(
     Route::get('template-asset', [AssetsController::class, 'templateAsset'])
 	    ->name('hardware.template-asset');
 
+	Route::get('template-search', [AssetsController::class, 'templateSearch'])
+        ->name('hardware.template-search');
+
+    Route::get('template-asset/{asset}', [AssetsController::class, 'templateAssetDetail'])
+        ->name('hardware.template-asset.detail');
         Route::get('audit/due', [AssetsController::class, 'dueForAudit'])
             ->name('assets.audit.due')
             ->breadcrumbs(fn (Trail $trail) =>

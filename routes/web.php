@@ -469,6 +469,9 @@ Route::group(['middleware' => ['auth']], function () {
 	// Template search for hardware autofill (used by name-autocomplete)
     Route::get('hardware/template-asset', [AssetsController::class, 'templateAsset'])
 	    ->name('hardware.template-asset');
+
+	Route::get('hardware/template-search', [AssetsController::class, 'templateSearch'])
+        ->name('hardware.template-search');
 });
 
 Route::group(['prefix' => 'reports', 'middleware' => ['auth']], function () {
