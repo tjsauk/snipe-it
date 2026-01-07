@@ -557,12 +557,12 @@ function setSelect2Value(selectId, value, text) {
             // Autofill fields (IDs MUST match your page)
             setSelect2Value('model_select_id', data.model_id, data.model_name);
             setSelect2Value('supplier_select', data.supplier_id, data.supplier_name);
-            setSelect2Value('rtd_location_id_location_select', data.rtd_location_id, data.rtd_location_name);
+            setSelect2Value('rtd_location_id_location_select', data.rtd_location_id, data.location_name);
             setSelect2Value('company_select', data.company_id, data.company_name);
 
             // Status: if your status select doesn't have id="status_select_id",
             // replace this line with the correct id OR use the class fallback below.
-            setSelect2Value('status_select_id', data.status_id, data.status_name);
+            setSelect2Value('status_select_id', data.status_id);
 
             // Class fallback if Snipe-IT uses class="status_id" instead of id:
             // if (data.status_id !== undefined && data.status_id !== null) {

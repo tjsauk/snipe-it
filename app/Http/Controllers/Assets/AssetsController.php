@@ -13,6 +13,7 @@ use App\Http\Requests\UploadFileRequest;
 use Illuminate\Support\Facades\Log;
 use App\Models\Asset;
 use App\Models\AssetModel;
+use App\Models\Supplier;
 use App\Models\CheckoutRequest;
 use App\Models\Company;
 use App\Models\Location;
@@ -481,42 +482,42 @@ public function templateAssetDetail(Asset $asset)
 {
     $this->authorize('view', $asset);
 
-    // Load related entities for display names.
-    // Relationship names can vary by Snipe-IT version; these are common.
-    $asset->loadMissing([
-        'uploads',
-        'model',
-        'supplier',
-        'company',
-        'statuslabel',
-        'rtd_location',   // common name in Snipe-IT
-    ]);
+    $modelName = null;
+    if ($asset->model_id) {
+        $modelName = AssetModel::where('id', $asset->model_id)->value('name');
+    }
+
+    $supplierName = null;
+    if ($asset->supplier_id) {
+        $supplierName = Supplier::where('id', $asset->supplier_id)->value('name');
+    }
+
+    $rtdLocationId = $asset->rtd_location_id ?? $asset->location_id;
+
+    $locationName = null;
+    if ($rtdLocationId) {
+        $locationName = Location::where('id', $rtdLocationId)->value('name');
+    }
 
     return response()->json([
-        'id'   => $asset->id,
-        'name' => $asset->name,
+        'id'               => $asset->id,
+        'name'             => $asset->name,
 
-        // IDs (what you already had)
-        'model_id'       => $asset->model_id,
-        'supplier_id'    => $asset->supplier_id,
-        'status_id'      => $asset->status_id,
-        'company_id'     => $asset->company_id,
-        'rtd_location_id'=> $asset->rtd_location_id,   // IMPORTANT: matches your select name/id
+        'model_id'         => $asset->model_id,
+        'model_name'       => $modelName,
 
-        // Optional: keep old key if your JS ever used it
-        'location_id'    => $asset->location_id,
+        'supplier_id'      => $asset->supplier_id,
+        'supplier_name'    => $supplierName,
 
-        // Human-readable names (needed for Select2 display)
-        'model_name'        => optional($asset->model)->name,
-        'supplier_name'     => optional($asset->supplier)->name,
-        'status_name'       => optional($asset->statuslabel)->name,
-        'company_name'      => optional($asset->company)->name,
-        'rtd_location_name' => optional($asset->rtd_location)->name,
+        'status_id'        => $asset->status_id, // you said status already works, so keep ID only
 
-        // how many files this template has
-        'files_count' => $asset->uploads ? $asset->uploads->count() : 0,
+        'rtd_location_id'  => $rtdLocationId,
+        'location_name'    => $locationName,
+
+        'company_id'       => $asset->company_id,
     ]);
 }
+
 
     /**
      * Validate and process asset edit form.
