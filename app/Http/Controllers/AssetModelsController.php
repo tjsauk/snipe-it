@@ -83,6 +83,11 @@ class AssetModelsController extends Controller
         $model->created_by = auth()->id();
         $model->requestable = $request->has('requestable');
         $model->require_serial = $request->input('require_serial', 0);
+        $model->allow_checkout_to_user     = $request->has('allow_checkout_to_user');
+        $model->allow_checkout_to_asset    = $request->has('allow_checkout_to_asset');
+        $model->allow_checkout_to_location = $request->has('allow_checkout_to_location');
+        $model->auto_checkin              = $request->has('auto_checkin');
+
 
         if ($request->input('fieldset_id') != '') {
             $model->fieldset_id = $request->input('fieldset_id');
@@ -158,6 +163,11 @@ class AssetModelsController extends Controller
         $model->requestable = $request->input('requestable', '0');
         $model->require_serial = $request->input('require_serial', 0);
         $model->fieldset_id = $request->input('fieldset_id');
+        $model->allow_checkout_to_user     = $request->has('allow_checkout_to_user');
+        $model->allow_checkout_to_asset    = $request->has('allow_checkout_to_asset');
+        $model->allow_checkout_to_location = $request->has('allow_checkout_to_location');
+        $model->auto_checkin              = $request->has('auto_checkin');
+
 
         if ($model->save()) {
             $this->removeCustomFieldsDefaultValues($model);

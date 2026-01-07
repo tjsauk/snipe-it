@@ -73,7 +73,20 @@ class AssetModel extends SnipeModel
         'name',
         'notes',
         'requestable',
-        'require_serial'
+        'require_serial',
+        'allow_checkout_to_user',
+        'allow_checkout_to_asset',
+        'allow_checkout_to_location',
+        'auto_checkin',
+    ];
+
+    protected $casts = [
+        'requestable'               => 'boolean',
+        'require_serial'            => 'boolean',
+        'allow_checkout_to_user'    => 'boolean',
+        'allow_checkout_to_asset'   => 'boolean',
+        'allow_checkout_to_location'=> 'boolean',
+        'auto_checkin'              => 'boolean',
     ];
 
     use Searchable;

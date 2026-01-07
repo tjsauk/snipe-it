@@ -11,10 +11,80 @@
 @section('inputFields')
 @include ('partials.forms.edit.name', ['translated_name' => trans('admin/models/table.name'), 'required' => 'true'])
 @include ('partials.forms.edit.category-select', ['translated_name' => trans('admin/categories/general.category_name'), 'fieldname' => 'category_id', 'required' => 'true', 'category_type' => 'asset'])
-@include ('partials.forms.edit.manufacturer-select', ['translated_name' => trans('general.manufacturer'), 'fieldname' => 'manufacturer_id'])
-@include ('partials.forms.edit.model_number')
-@include ('partials.forms.edit.depreciation')
-@include ('partials.forms.edit.minimum_quantity')
+
+{{-- Allowed checkout targets --}}
+<div class="form-group">
+    <label class="col-md-3 control-label">
+        {{ __('Allowed checkout targets') }}
+    </label>
+    <div class="col-md-9">
+        <p class="help-block">{{ __('Choose what assets of this model can be checked out to.') }}</p>
+    </div>
+</div>
+
+<div class="form-group">
+    <label for="allow_checkout_to_user" class="col-md-3 control-label">{{ __('User') }}</label>
+    <div class="col-md-9">
+        <div class="form-inline" style="display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox"
+                   name="allow_checkout_to_user"
+                   value="1"
+                   @checked(old('allow_checkout_to_user', $item->allow_checkout_to_user ?? true))
+                   id="allow_checkout_to_user"
+                   aria-label="allow_checkout_to_user" />
+        </div>
+    </div>
+</div>
+
+<div class="form-group">
+    <label for="allow_checkout_to_asset" class="col-md-3 control-label">{{ __('Asset') }}</label>
+    <div class="col-md-9">
+        <div class="form-inline" style="display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox"
+                   name="allow_checkout_to_asset"
+                   value="1"
+                   @checked(old('allow_checkout_to_asset', $item->allow_checkout_to_asset ?? true))
+                   id="allow_checkout_to_asset"
+                   aria-label="allow_checkout_to_asset" />
+        </div>
+    </div>
+</div>
+
+<div class="form-group">
+    <label for="allow_checkout_to_location" class="col-md-3 control-label">{{ __('Location') }}</label>
+    <div class="col-md-9">
+        <div class="form-inline" style="display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox"
+                   name="allow_checkout_to_location"
+                   value="1"
+                   @checked(old('allow_checkout_to_location', $item->allow_checkout_to_location ?? true))
+                   id="allow_checkout_to_location"
+                   aria-label="allow_checkout_to_location" />
+        </div>
+    </div>
+</div>
+
+{{-- Auto check-in --}}
+<div class="form-group">
+    <label for="auto_checkin" class="col-md-3 control-label">{{ __('Auto check-in') }}</label>
+    <div class="col-md-9">
+        <div class="form-inline" style="display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox"
+                   name="auto_checkin"
+                   value="1"
+                   @checked(old('auto_checkin', $item->auto_checkin ?? false))
+                   id="auto_checkin"
+                   aria-label="auto_checkin" />
+            <a href="#"
+               data-tooltip="true"
+               title="{{ __('If enabled, assets of this model will automatically be checked in after checkout.') }}"
+               style="display: inline-flex; align-items: center;">
+                <x-icon type="info-circle" />
+                <span class="sr-only">{{ __('Auto check-in help') }}</span>
+            </a>
+        </div>
+    </div>
+</div>
 
 <!-- require serial boolean -->
 <div class="form-group">
@@ -61,6 +131,9 @@
 @include ('partials.forms.edit.notes')
 @include ('partials.forms.edit.requestable', ['requestable_text' => trans('admin/models/general.requestable')])
 @include ('partials.forms.edit.image-upload', ['image_path' => app('models_upload_path')])
-
+@include ('partials.forms.edit.manufacturer-select', ['translated_name' => trans('general.manufacturer'), 'fieldname' => 'manufacturer_id'])
+@include ('partials.forms.edit.model_number')
+@include ('partials.forms.edit.depreciation')
+@include ('partials.forms.edit.minimum_quantity')
 
 @stop
