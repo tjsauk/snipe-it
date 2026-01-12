@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use App\Events\CheckoutableCheckedOut;
+use App\Events\CheckoutableCheckedIn;
+
 use App\Exceptions\CheckoutNotAllowed;
 use App\Helpers\Helper;
 use App\Http\Traits\UniqueUndeletedTrait;
@@ -88,9 +90,9 @@ class Asset extends Depreciable
         'eol_explicit' => 'boolean',
         'last_checkout' => 'datetime',
         'last_checkin' => 'datetime',
-        'expected_checkin' => 'datetime:m-d-Y',
+        'expected_checkin' => 'datetime',
         'last_audit_date' => 'datetime',
-        'next_audit_date' => 'datetime:m-d-Y',
+        'next_audit_date' => 'datetime',
         'model_id'       => 'integer',
         'status_id'      => 'integer',
         'company_id'     => 'integer',
@@ -109,10 +111,10 @@ class Asset extends Depreciable
         'name'              => ['nullable', 'max:255'],
         'company_id'        => ['nullable', 'integer', 'exists:companies,id'],
         'warranty_months'   => ['nullable', 'numeric', 'digits_between:0,240'],
-        'last_checkout'     => ['nullable', 'date_format:Y-m-d H:i:s'],
-        'last_checkin'      => ['nullable', 'date_format:Y-m-d H:i:s'],
+        'last_checkout'     => ['nullable', 'date'],
+        'last_checkin'      => ['nullable', 'date'],
         'expected_checkin'  => ['nullable', 'date'],
-        'last_audit_date'   => ['nullable', 'date_format:Y-m-d H:i:s'],
+        'last_audit_date'   => ['nullable', 'date'],
         'next_audit_date'   => ['nullable', 'date'],
         'location_id'       => ['nullable', 'exists:locations,id', 'fmcs_location'],
         'rtd_location_id'   => ['nullable', 'exists:locations,id', 'fmcs_location'],
@@ -132,46 +134,79 @@ class Asset extends Depreciable
         'assigned_location' => ['integer', 'nullable', 'exists:locations,id,deleted_at,NULL', 'fmcs_location'],
         'assigned_asset'    => ['integer', 'nullable', 'exists:assets,id,deleted_at,NULL']
     ];
-
+//'last_checkout'     => ['nullable', 'date_format:Y-m-d H:i:s'],
     
     /**
      * Handles blocked timeperiods for the updated calender
      *
      */
+    
     public function calendarBlockedRanges(): array
     {
         $ranges = [];
 
-        // Current checkout window (if checked out)
-        if ($this->assigned_to) {
-            // Prefer last_checkout as start (that matches your overlapsOngoingCheckout logic)
-            $start = $this->last_checkout
-                ? Carbon::parse($this->last_checkout)->toDateString()
-                : Carbon::today()->toDateString();
+        // Normalize to exact hour starts
+        $toHourStart = function ($dt) {
+            return Carbon::parse($dt)->minute(0)->second(0);
+        };
 
-            // End is expected_checkin if exists, otherwise open-ended
-            $end = $this->expected_checkin
-                ? Carbon::parse($this->expected_checkin)->toDateString()
+        // DB end is a boundary (exclusive). UI expects "last occupied hour start".
+        // Example: DB end 12:00 means last occupied hour is 11:00.
+        $boundaryEndToUiLastHour = function ($dt) use ($toHourStart) {
+            if (!$dt) return null;
+            return $toHourStart(Carbon::parse($dt)->subHour());
+        };
+
+        // -------------------------
+        // Current checkout window
+        // -------------------------
+        if ($this->assigned_to) {
+            $start = $this->last_checkout
+                ? $toHourStart($this->last_checkout)
+                : $toHourStart(Carbon::now());
+
+            // expected_checkin is stored as boundary end
+            $uiEnd = $this->expected_checkin
+                ? $boundaryEndToUiLastHour($this->expected_checkin)
                 : null;
 
             $ranges[] = [
-                'from' => $start,
-                'to'   => $end,
+                'from' => $start->format('Y-m-d H:i:s'),
+                'to'   => $uiEnd ? $uiEnd->format('Y-m-d H:i:s') : null,
                 'type' => 'checkout',
             ];
         }
 
+        // -------------------------
         // Active reservations
+        // -------------------------
         foreach ($this->activeReservations()->get() as $res) {
+            $from = $toHourStart($res->reserved_from);
+
+            $untilRaw = $res->reserved_until ?? $res->reserved_from;
+
+            // Backwards-compat: if some old rows are DATE-only, treat them as "end of that day"
+            // but still return UI "last occupied hour start" = 23:00.
+            $until = Carbon::parse($untilRaw);
+            if (strlen((string) $untilRaw) <= 10) { // "YYYY-MM-DD"
+                $until = $until->endOfDay()->addSecond(); 
+                // endOfDay is 23:59:59; addSecond makes it 24:00 boundary
+            }
+
+            // reserved_until is stored as boundary end (in your current store())
+            $uiEnd = $boundaryEndToUiLastHour($until);
+
             $ranges[] = [
-                'from' => Carbon::parse($res->reserved_from)->toDateString(),
-                'to'   => Carbon::parse($res->reserved_until ?? $res->reserved_from)->toDateString(),
+                'from' => $from->format('Y-m-d H:i:s'),
+                'to'   => $uiEnd->format('Y-m-d H:i:s'),
                 'type' => 'reservation',
             ];
         }
 
         return $ranges;
     }
+
+
 
     /**
      * The attributes that are mass assignable.
@@ -338,6 +373,16 @@ class Asset extends Depreciable
         return parent::save($params);
     }
 
+    public function getExpectedCheckinUiAttribute()
+    {
+        if (!$this->expected_checkin) {
+            return null;
+        }
+
+        // DB stores boundary end; UI shows last occupied hour
+        return \Carbon\Carbon::parse($this->expected_checkin)->subHour();
+    }
+
     public function getDisplayNameAttribute()
     {
         return $this->present()->name();
@@ -475,14 +520,17 @@ class Asset extends Depreciable
     protected function expectedCheckinFormattedDate(): Attribute
     {
         return Attribute:: make(
-            get: fn(mixed $value, array $attributes) => array_key_exists('expected_checkin', $attributes) ? Helper::getFormattedDateObject($attributes['expected_checkin'], 'date', false) : null,
+            get: fn(mixed $value, array $attributes) => array_key_exists('expected_checkin', $attributes) ? Helper::getFormattedDateObject($attributes['expected_checkin'], 'datetime', false) : null,
         );
     }
 
     protected function expectedCheckinDiffForHumans(): Attribute
     {
-        return Attribute:: make(
-            get: fn(mixed $value, array $attributes) => array_key_exists('expected_checkin', $attributes)  ? Carbon::parse($this->expected_checkin)->diffForHumans() : null,
+        return Attribute::make(
+            get: fn(mixed $value, array $attributes) =>
+                !empty($attributes['expected_checkin'])
+                    ? Carbon::parse($attributes['expected_checkin'])->diffForHumans()
+                    : null,
         );
     }
 
@@ -533,32 +581,30 @@ class Asset extends Depreciable
     public function overlapsOngoingCheckout($from, $until): bool
     {
         if (!$this->assigned_to) {
-            return false; // not checked out at all
+            return false;
         }
 
-        $from = Carbon::parse($from)->startOfDay();
-        $until = Carbon::parse($until)->endOfDay();
+        $from  = Carbon::parse($from);
+        $until = Carbon::parse($until);
 
-        $checkoutStart = $this->last_checkout
-            ? Carbon::parse($this->last_checkout)->startOfDay()
-            : null;
+        $checkoutStart = $this->last_checkout ? Carbon::parse($this->last_checkout) : null;
 
+        // If checked in early -> end at last_checkin, else expected_checkin
         $checkoutEnd = null;
-
         if ($this->last_checkin) {
-            // checked in early – window ends at last_checkin
-            $checkoutEnd = Carbon::parse($this->last_checkin)->endOfDay();
+            $checkoutEnd = Carbon::parse($this->last_checkin);
         } elseif ($this->expected_checkin) {
-            $checkoutEnd = Carbon::parse($this->expected_checkin)->endOfDay();
+            $checkoutEnd = Carbon::parse($this->expected_checkin);
         }
 
         if (!$checkoutStart || !$checkoutEnd) {
             return false;
         }
 
-        // standard interval overlap
+        // Standard interval overlap (inclusive)
         return $from <= $checkoutEnd && $until >= $checkoutStart;
     }
+
 
     /**
      * Does the given date range overlap any active reservation on this asset?
@@ -567,8 +613,8 @@ class Asset extends Depreciable
      */
     public function overlapsReservations($from, $until, ?int $excludeUserId = null): bool
     {
-        $from  = Carbon::parse($from)->startOfDay();
-        $until = Carbon::parse($until)->endOfDay();
+        $from  = Carbon::parse($from);
+        $until = Carbon::parse($until);
 
         $query = $this->activeReservations();
 
@@ -576,14 +622,86 @@ class Asset extends Depreciable
             $query->where('user_id', '!=', $excludeUserId);
         }
 
+        // Overlap test:
+        // reserved_from <= until AND (reserved_until is null OR reserved_until >= from)
         return $query->where(function ($q) use ($from, $until) {
-            $q->where('reserved_from', '<=', $until)
+            $q->where('reserved_from', '<=', $until->format('Y-m-d H:i:s'))
             ->where(function ($q2) use ($from) {
                 $q2->whereNull('reserved_until')
-                    ->orWhere('reserved_until', '>=', $from);
+                    ->orWhere('reserved_until', '>=', $from->format('Y-m-d H:i:s'));
             });
         })->exists();
     }
+
+
+    /**
+     * If model has auto_return enabled and expected_checkin has passed,
+     * automatically check the asset in.
+     *
+     * After checkin, normal code flow can proceed (including reservation->checkout).
+     */
+    public function autoCheckinIfDue(): void
+    {
+        $auto = (bool) optional($this->model)->auto_checkin;
+        if (!$auto) return;
+
+        // must be checked out
+        if (!$this->assigned_to) return;
+
+        // needs expected_checkin
+        if (!$this->expected_checkin) return;
+
+        $now = Carbon::now();
+        $expected = Carbon::parse($this->expected_checkin);
+
+        // not due yet
+        if ($now->lt($expected)) return;
+
+        // perform checkin safely
+        $target = $this->assignedTo; // morphTo relationship
+        if (!$target) {
+            // if target missing, still unassign
+            $this->assigned_to = null;
+            $this->assigned_type = null;
+            $this->last_checkin = $now->format('Y-m-d H:i:s');
+            $this->save();
+            return;
+        }
+
+        // mimic normal checkin side effects (event/logs)
+        $originalValues = $this->getRawOriginal();
+        $this->assigned_to = null;
+        $this->assigned_type = null;
+        $this->accepted = null;
+        $this->last_checkin = $now->format('Y-m-d H:i:s');
+
+        $this->last_checkout = null;
+        $this->expected_checkin = null;
+
+        if ($this->save()) {
+            event(new \App\Events\CheckoutableCheckedIn(
+                $this,
+                $target,
+                auth()->user() ?: \App\Models\User::query()->first(),
+                'Auto checkin (due date reached)',
+                $now->format('Y-m-d H:i:s'),
+                $originalValues
+            ));
+        }
+    }
+
+
+    /**
+     * Resolve a "system actor" for background/lazy transitions when no auth user exists.
+     */
+    protected function resolveSystemActor(): ?\App\Models\User
+    {
+        return \App\Models\User::query()
+            ->where('permissions', 'like', '%"superuser"%')
+            ->orWhere('permissions', 'like', '%superuser%')
+            ->first();
+    }
+
 
     /**
      * If there is an active reservation whose window includes "today"
@@ -596,20 +714,21 @@ class Asset extends Depreciable
      */
    public function autoCheckoutActiveReservationIfDue(): void
     {
-        $today = Carbon::today();
+        // hour precision "now"
+        $now = Carbon::now()->minute(0)->second(0);
 
         // If the asset is already checked out, do nothing
         if ($this->assigned_to) {
             return;
         }
 
-        // Find the first active reservation whose window includes today
+        // Find the first active reservation whose window includes "now"
         $reservation = $this->reservations()
             ->where('status', 'active')
-            ->whereDate('reserved_from', '<=', $today->toDateString())
-            ->where(function ($q) use ($today) {
+            ->where('reserved_from', '<=', $now)
+            ->where(function ($q) use ($now) {
                 $q->whereNull('reserved_until')
-                ->orWhereDate('reserved_until', '>=', $today->toDateString());
+                ->orWhere('reserved_until', '>=', $now);
             })
             ->orderBy('reserved_from')
             ->first();
@@ -646,11 +765,12 @@ class Asset extends Depreciable
         }
 
         // Use TODAY as checkout start when converting (reservation is "due now")
-        $checkoutAt = $today->toDateString();
+        $checkoutAt = $now->format('Y-m-d H:i:s');
+
 
         // Expected checkin is reservation end (if any); if null, you can pick a default
         $expected = $reservation->reserved_until
-            ? Carbon::parse($reservation->reserved_until)->toDateString()
+            ? Carbon::parse($reservation->reserved_until)->format('Y-m-d H:i:s')
             : null;
 
         $success = $this->checkOut(

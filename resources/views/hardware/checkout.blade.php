@@ -10,9 +10,18 @@
     $assetModel   = optional($asset->model ?? null);
     $assetCategory = optional($assetModel->category ?? null);
 
-    $allowCheckoutToUser      = $assetCategory->allow_checkout_to_user      ?? true;
-    $allowCheckoutToAsset     = $assetCategory->allow_checkout_to_asset     ?? true;
-    $allowCheckoutToLocation  = $assetCategory->allow_checkout_to_location  ?? true;
+    $catAllowUser = $assetCategory->allow_checkout_to_user ?? true;
+    $catAllowAsset = $assetCategory->allow_checkout_to_asset ?? true;
+    $catAllowLocation = $assetCategory->allow_checkout_to_location ?? true;
+
+    $modAllowUser = $assetModel->allow_checkout_to_user ?? true;
+    $modAllowAsset = $assetModel->allow_checkout_to_asset ?? true;
+    $modAllowLocation = $assetModel->allow_checkout_to_location ?? true;
+
+    // Category + model must BOTH allow it
+    $allowCheckoutToUser     = $catAllowUser     && $modAllowUser;
+    $allowCheckoutToAsset    = $catAllowAsset    && $modAllowAsset;
+    $allowCheckoutToLocation = $catAllowLocation && $modAllowLocation;
 @endphp
 
 @php
@@ -34,6 +43,8 @@
         .input-group {
             padding-left: 0px !important;
         }
+        
+
     </style>
 
     <div class="row">
@@ -46,12 +57,13 @@
                         ? route('hardware.reserve.store', $asset->id)
                         : route('hardware.checkout.store', $asset->id);
                 @endphp
-                <form class="form-horizontal" method="post" action="" autocomplete="off">
+                <form class="form-horizontal" method="post" action="{{ $storeRoute }}" autocomplete="off">
                     <div class="box-header with-border">
                         <h2 class="box-title"> {{ trans('admin/hardware/form.tag') }} {{ $asset->asset_tag }}</h2>
                     </div>
                     <div class="box-body">
                         {{csrf_field()}}
+                        
                         @if ($asset->company)
                             <!-- accessory name -->
                             <div class="form-group">
@@ -185,63 +197,89 @@
                         @endif
 
                         <!-- We have to pass unselect here so that we don't default to the asset that's being checked out. We want that asset to be pre-selected everywhere else. -->
+                        @if ($allowCheckoutToAsset)
                         @include ('partials.forms.edit.asset-select', ['translated_name' => trans('general.select_asset'), 'fieldname' => 'assigned_asset', 'company_id' => $asset->company_id, 'unselect' => 'true', 'style' => session('checkout_to_type') == 'asset' ? '' : 'display: none;'])
+                        @endif
+                        @if ($allowCheckoutToLocation)
                         @include ('partials.forms.edit.location-select', ['translated_name' => trans('general.location'), 'fieldname' => 'assigned_location', 'style' => session('checkout_to_type') == 'location' ? '' : 'display: none;'])
+                        @endif                
 
 
 
-                        <!-- Checkout/Checkin Date -->
+                        <!-- Checkout Date + Time -->
                         <div class="form-group {{ $errors->has('checkout_at') ? 'error' : '' }}">
-                            <label for="checkout_at" class="col-md-3 control-label">
+                            <label for="checkout_at_dt" class="col-md-3 control-label">
                                 {{ trans('admin/hardware/form.checkout_date') }}
                             </label>
+
                             <div class="col-md-8">
+                                <input
+                                    type="text"
+                                    id="checkout_at_dt"
+                                    class="form-control col-md-7"
+                                    value=""
+                                    {{ (!empty($reserve_mode) && $reserve_mode) ? '' : 'readonly' }}
+                                >
+                                <p class="help-block" style="margin:6px 0 0;">
+                                  Select the start hour. Example: <strong>13:00</strong> means usage starts <strong>13:00–13:59</strong>.
+                                </p>
 
-                                @if (!empty($reserve_mode) && $reserve_mode)
-                                    {{-- Reservation: start date must be in the future (from tomorrow) --}}
-                                    <input
-                                        type="text"
-                                        id="checkout_at"
-                                        name="checkout_at"
-                                        class="form-control col-md-7"
-                                        value="{{ old('checkout_at', $defaultCheckoutAt) }}"
-                                    >
-                                @else
-                                    {{-- Normal checkout: checkout date is always today and NOT editable --}}
-                                    <input 
-                                        type="text" 
-                                        class="form-control col-md-7" 
-                                        value="{{ $defaultCheckoutAt }}" 
-                                        readonly>
-                                    <input 
-                                        type="hidden" 
-                                        id="checkout_at" 
-                                        name="checkout_at" 
-                                        value="{{ $defaultCheckoutAt }}"
-                                    >
 
-                                @endif
+                                {{-- Submitted values (ONLY ONCE) --}}
+                                <input
+                                    type="hidden"
+                                    id="checkout_at"
+                                    name="checkout_at"
+                                    value="{{ old('checkout_at', $defaultCheckoutAt) }}"
+                                >
+                                <input
+                                    type="hidden"
+                                    id="checkout_hour"
+                                    name="checkout_hour"
+                                    value="{{ old('checkout_hour', '') }}"
+                                >
+
                                 {!! $errors->first('checkout_at', '<span class="alert-msg" aria-hidden="true"><i class="fas fa-times" aria-hidden="true"></i> :message</span>') !!}
                             </div>
                         </div>
 
-                        <!-- Expected Checkin Date -->
+                        <!-- Expected Checkin Date + Time -->
                         <div class="form-group {{ $errors->has('expected_checkin') ? 'error' : '' }}">
-                            <label for="expected_checkin" class="col-md-3 control-label">
+                            <label for="expected_checkin_dt" class="col-md-3 control-label">
                                 {{ trans('admin/hardware/form.expected_checkin') }}
                             </label>
 
                             <div class="col-md-8">
                                 <input
                                     type="text"
+                                    id="expected_checkin_dt"
+                                    class="form-control col-md-7"
+                                    value=""
+                                >
+                                <p class="help-block" style="margin:6px 0 0;">
+                                  Select the <strong>last used hour</strong>. Example: end <strong>13:00</strong> means the item is used until <strong>13:59</strong> and becomes available at <strong>14:00</strong>.
+                                </p>
+
+
+                                {{-- Submitted values (ONLY ONCE) --}}
+                                <input
+                                    type="hidden"
                                     id="expected_checkin"
                                     name="expected_checkin"
-                                    class="form-control col-md-7"
                                     value="{{ old('expected_checkin', $defaultExpectedCheckin) }}"
                                 >
+                                <input
+                                    type="hidden"
+                                    id="expected_checkin_hour"
+                                    name="expected_checkin_hour"
+                                    value="{{ old('expected_checkin_hour', '') }}"
+                                >
+
                                 {!! $errors->first('expected_checkin', '<span class="alert-msg" aria-hidden="true"><i class="fas fa-times" aria-hidden="true"></i> :message</span>') !!}
                             </div>
                         </div>
+
+
 
                         <input type="hidden" name="reserve_mode" value="{{ !empty($reserve_mode) && $reserve_mode ? 1 : 0 }}">
 
@@ -347,205 +385,491 @@
     </style>
 
     <script>
-    document.addEventListener('DOMContentLoaded', function () {
-    if (typeof flatpickr === 'undefined') return;
+document.addEventListener('DOMContentLoaded', function () {
+  if (typeof flatpickr === 'undefined') return;
 
-    const ranges = @json($calendarRanges);
-    const reserveMode = {{ !empty($reserve_mode) && $reserve_mode ? 'true' : 'false' }};
+  const reserveMode = {{ !empty($reserve_mode) && $reserve_mode ? 'true' : 'false' }};
+  const rangesRaw = @json($calendarRanges ?? []);
 
-    const checkoutEl  = document.getElementById('checkout_at');        // editable in reserve, hidden in checkout
-    const expectedEl  = document.getElementById('expected_checkin');   // always editable
-    if (!checkoutEl || !expectedEl) return;
+  const checkoutDTEl  = document.getElementById('checkout_at_dt');
+  const expectedDTEl  = document.getElementById('expected_checkin_dt');
 
-    // ---------- helpers ----------
-    function toISO(d) {
-        const y = d.getFullYear();
-        const m = String(d.getMonth() + 1).padStart(2, '0');
-        const da = String(d.getDate()).padStart(2, '0');
-        return `${y}-${m}-${da}`;
+  const checkoutDateHidden = document.getElementById('checkout_at');
+  const expectedDateHidden = document.getElementById('expected_checkin');
+
+  const checkoutHourHidden = document.getElementById('checkout_hour');
+  const expectedHourHidden = document.getElementById('expected_checkin_hour');
+
+  if (!checkoutDTEl || !expectedDTEl || !checkoutDateHidden || !expectedDateHidden || !checkoutHourHidden || !expectedHourHidden) return;
+
+  // Make sure the inputs can open flatpickr (themes sometimes kill pointer events)
+  expectedDTEl.removeAttribute('disabled');
+  expectedDTEl.removeAttribute('readonly');
+  expectedDTEl.classList.remove('disabled');
+  expectedDTEl.style.pointerEvents = 'auto';
+  expectedDTEl.style.cursor = 'pointer';
+
+  if (reserveMode) {
+    checkoutDTEl.removeAttribute('disabled');
+    checkoutDTEl.removeAttribute('readonly');
+    checkoutDTEl.classList.remove('disabled');
+    checkoutDTEl.style.pointerEvents = 'auto';
+    checkoutDTEl.style.cursor = 'pointer';
+  }
+
+  // ---------------- helpers ----------------
+  const now = new Date();
+
+  function pad2(n){ return String(n).padStart(2,'0'); }
+  function snapToHour(d){
+    const x = new Date(d.getTime());
+    x.setMinutes(0,0,0);
+    return x;
+  }
+  function addHours(d, h){
+    const x = new Date(d.getTime());
+    x.setHours(x.getHours() + h);
+    return x;
+  }
+  function startOfDay(d){
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0,0,0,0);
+  }
+  function formatDateOnly(d){
+    return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+  }
+  function roundUpToNextHour(d){
+    const x = new Date(d.getTime());
+    if (x.getMinutes() !== 0 || x.getSeconds() !== 0 || x.getMilliseconds() !== 0) {
+      x.setHours(x.getHours() + 1);
     }
+    x.setMinutes(0,0,0);
+    return x;
+  }
+  function parseDT(str) {
+    if (!str) return null;
+    return flatpickr.parseDate(str, str.length >= 19 ? "Y-m-d H:i:S" : "Y-m-d H:i");
+  }
+  function writeHiddenFromDT(dt, dateHiddenEl, hourHiddenEl) {
+    dt = snapToHour(dt);
+    dateHiddenEl.value = formatDateOnly(dt);
+    hourHiddenEl.value = String(dt.getHours());
+  }
+  function composeFromHidden(dateHiddenEl, hourHiddenEl, fallbackDT) {
+    const iso = dateHiddenEl.value;
+    const hRaw = hourHiddenEl.value;
+    const h = (hRaw !== '' && !isNaN(parseInt(hRaw,10))) ? parseInt(hRaw,10) : fallbackDT.getHours();
 
-    function parseISO(iso) {
-        const [y,m,d] = iso.split('-').map(Number);
-        return new Date(y, m-1, d);
-    }
+    if (!iso) return snapToHour(fallbackDT);
+    const base = flatpickr.parseDate(iso, "Y-m-d");
+    if (!base) return snapToHour(fallbackDT);
+    base.setHours(h,0,0,0);
+    return base;
+  }
 
-    function addDays(dateObj, days) {
-        const d = new Date(dateObj.getTime());
-        d.setDate(d.getDate() + days);
-        return d;
-    }
-
-    function normISO(iso) {
-        // ensure YYYY-MM-DD
-        if (!iso) return null;
-        const d = parseISO(iso);
-        return isNaN(d.getTime()) ? null : toISO(d);
-    }
-
-    // normalize ranges defensively
-    const normRanges = (ranges || [])
-        .map(r => ({
-        from: normISO(r.from),
-        to:   r.to ? normISO(r.to) : null,
-        type: r.type || 'reservation'
-        }))
-        .filter(r => r.from)
-        .map(r => {
-        // swap if inverted
-        if (r.to && r.to < r.from) {
-            const tmp = r.from; r.from = r.to; r.to = tmp;
-        }
-        return r;
-        });
-
-    function isBlockedISO(iso) {
-        return normRanges.some(r => {
-        if (!r.to) return iso >= r.from;               // open-ended blocks future
-        return iso >= r.from && iso <= r.to;           // inclusive
-        });
-    }
-
-    function styleDay(dateObj) {
-        const iso = toISO(dateObj);
-        const r = normRanges.find(r => iso >= r.from && (!r.to || iso <= r.to));
-        if (!r) return null;
-        return r.type === 'checkout' ? 'checkout-blocked' : 'reservation-blocked';
-    }
-
-    // earliest blocked "from" >= startISO, or startISO if start falls inside a block
-    function nextBlockedStartISO(startISO) {
-        let best = null;
-
-        for (const r of normRanges) {
-        const from = r.from;
-        const to   = r.to || r.from;
-
-        if (startISO >= from && startISO <= to) return startISO;  // inside
-        if (!r.to && startISO >= from) return startISO;           // open-ended and after start
-
-        if (from >= startISO) {
-            if (!best || from < best) best = from;
-        }
-        }
-        return best;
-    }
-
-    function computeMaxEndISO(startISO) {
-        const nb = nextBlockedStartISO(startISO);
-        if (!nb) return null;
-        return toISO(addDays(parseISO(nb), -1)); // day before next block starts
-    }
-
-    // ---------- establish the start date ----------
-    // in checkout mode checkoutEl is hidden, but it contains the correct start ISO
-    let startISO = normISO(checkoutEl.value) || toISO(new Date());
-
-    // reservation: min start is tomorrow
-    const tomorrowISO = toISO(addDays(new Date(), 1));
-
-    // ---------- expected picker (always enabled) ----------
-    let expectedPicker = flatpickr(expectedEl, {
-        dateFormat: 'Y-m-d',
-        defaultDate: normISO(expectedEl.value) || null,
-        minDate: startISO,
-        maxDate: computeMaxEndISO(startISO) || null,
-        disable: [
-        (date) => isBlockedISO(toISO(date))  // do not allow selecting blocked days as end
-        ],
-        onChange: function(selectedDates) {
-        if (!selectedDates.length) return;
-        const endISO = toISO(selectedDates[0]);
-
-        // clamp: end >= start
-        if (endISO < startISO) {
-            this.setDate(startISO, true);
-            return;
-        }
-
-        // clamp: end <= max (day before next block)
-        const maxISO = computeMaxEndISO(startISO);
-        if (maxISO && endISO > maxISO) {
-            this.setDate(maxISO, true);
-        }
-        },
-        onDayCreate(_, __, fp, dayElem) {
-        const cls = styleDay(dayElem.dateObj);
-        if (cls) dayElem.classList.add(cls);
-
-        // mark last allowed end day
-        const maxISO = computeMaxEndISO(startISO);
-        if (maxISO && toISO(dayElem.dateObj) === maxISO) {
-            dayElem.classList.add('last-available-day');
-        }
-        }
+  // ---------------- normalize blocked ranges to hour-starts ----------------
+  // blocked interval convention: [from, to + 1h) blocks the hour-starts from..to inclusive
+  const ranges = (rangesRaw || [])
+    .map(r => ({
+      from: parseDT(r.from),
+      to:   parseDT(r.to || r.from),
+      type: r.type || 'reservation'
+    }))
+    .filter(r => r.from && r.to)
+    .map(r => {
+      if (r.to < r.from) { const t = r.from; r.from = r.to; r.to = t; }
+      r.from = snapToHour(r.from);
+      r.to   = snapToHour(r.to);
+      return r;
     });
 
-    // ---------- checkout picker (only in reserve mode) ----------
-    // Normal checkout: checkoutEl is hidden -> do NOT attach flatpickr to it.
-    if (reserveMode && checkoutEl.type !== 'hidden') {
-
-        // If backend gave us something illegal, move to first free day >= tomorrow
-        if (startISO < tomorrowISO || isBlockedISO(startISO)) {
-        let d = parseISO(tomorrowISO);
-        for (let i = 0; i < 365; i++) {
-            const iso = toISO(d);
-            if (!isBlockedISO(iso)) { startISO = iso; break; }
-            d = addDays(d, 1);
-        }
-        checkoutEl.value = startISO;
-        }
-
-        flatpickr(checkoutEl, {
-        dateFormat: 'Y-m-d',
-        defaultDate: startISO,
-        minDate: tomorrowISO,
-        disable: [
-            (date) => isBlockedISO(toISO(date)) // cannot start on blocked days
-        ],
-        onChange: function(selectedDates) {
-            if (!selectedDates.length) return;
-
-            const newStartISO = toISO(selectedDates[0]);
-            startISO = newStartISO;
-
-            // update end constraints
-            const maxISO = computeMaxEndISO(startISO);
-            expectedPicker.set('minDate', startISO);
-            expectedPicker.set('maxDate', maxISO || null);
-
-            // DO NOT reset end unless it becomes invalid:
-            const curEnd = expectedPicker.selectedDates[0];
-            const curEndISO = curEnd ? toISO(curEnd) : null;
-
-            if (!curEndISO) {
-            // if empty, set to start
-            expectedPicker.setDate(startISO, true);
-            return;
-            }
-
-            if (curEndISO < startISO) {
-            // only then snap end to start
-            expectedPicker.setDate(startISO, true);
-            return;
-            }
-
-            if (maxISO && curEndISO > maxISO) {
-            // snap end down to max allowed
-            expectedPicker.setDate(maxISO, true);
-            return;
-            }
-
-            // otherwise keep end unchanged
-        },
-        onDayCreate(_, __, fp, dayElem) {
-            const cls = styleDay(dayElem.dateObj);
-            if (cls) dayElem.classList.add(cls);
-        }
-        });
-    }
+  function isDTBlocked(dt){
+    const h = snapToHour(dt);
+    return ranges.some(r => {
+      const toExclusive = addHours(r.to, 1);
+      return h >= r.from && h < toExclusive;
     });
-    </script>
+  }
+
+  function nextBlockedStart(afterDT){
+    const probe = snapToHour(afterDT);
+    let best = null;
+    for (const r of ranges){
+      const toExclusive = addHours(r.to, 1);
+
+      // inside a block -> next blocked "start" is this block's start
+      if (probe >= r.from && probe < toExclusive) return new Date(r.from.getTime());
+
+      // otherwise, next block that starts after probe
+      if (r.from >= probe) {
+        if (!best || r.from < best) best = r.from;
+      }
+    }
+    return best ? new Date(best.getTime()) : null;
+  }
+
+  // User chooses END as "last occupied hour start".
+  // If next block starts at 10:00, last selectable end is 09:00.
+  function maxAllowedEnd(startDT){
+    const next = nextBlockedStart(startDT);
+    if (!next) return null;
+    return snapToHour(addHours(next, -1));
+  }
+
+  function firstOpenHourFrom(dt, maxScanHours = 24*60){
+    let x = snapToHour(dt);
+    for (let i=0; i<maxScanHours; i++){
+      if (!isDTBlocked(x)) return x;
+      x = addHours(x, 1);
+    }
+    return snapToHour(dt);
+  }
+
+  function firstValidHourOnDay(dayDate, minDT, maxDT){
+    const day0 = startOfDay(dayDate);
+    for (let h=0; h<24; h++){
+      const dt = new Date(day0.getFullYear(), day0.getMonth(), day0.getDate(), h,0,0,0);
+      if (minDT && dt < minDT) continue;
+      if (maxDT && dt > maxDT) continue;
+      if (!isDTBlocked(dt)) return dt;
+    }
+    return null;
+  }
+
+  function lastValidHourOnDay(dayDate, minDT, maxDT){
+    const day0 = startOfDay(dayDate);
+    for (let h=23; h>=0; h--){
+      const dt = new Date(day0.getFullYear(), day0.getMonth(), day0.getDate(), h,0,0,0);
+      if (minDT && dt < minDT) continue;
+      if (maxDT && dt > maxDT) continue;
+      if (!isDTBlocked(dt)) return dt;
+    }
+    return null;
+  }
+
+  // ---------------- default rules ----------------
+  function defaultCheckoutStart(){
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0,0,0);
+  }
+
+  // Your requested default: tomorrow at current hour
+  // (but still allow selecting today >= next full hour)
+  function defaultReservationStart(){
+    const tomorrowSameHour = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, now.getHours(), 0,0,0);
+    return firstOpenHourFrom(tomorrowSameHour);
+  }
+
+  function chooseDefaultEnd(startDT){
+    const plus2w = snapToHour(addHours(startDT, 24*14));
+    const nextStart = nextBlockedStart(startDT);
+    if (nextStart && nextStart <= plus2w) {
+      const end = snapToHour(addHours(nextStart, -1));
+      return end < startDT ? new Date(startDT.getTime()) : end;
+    }
+    return plus2w;
+  }
+
+  // Reservation earliest selectable moment = next full hour (today allowed)
+  const minReservationStart = roundUpToNextHour(now);
+
+  // ---------------- day disable (calendar cells) ----------------
+  // Disable a day only if it has no valid hour in the allowed window.
+  function disableStartDay(dayDate){
+    if (!reserveMode) return false;
+    // block past days entirely
+    if (startOfDay(dayDate) < startOfDay(minReservationStart)) return true;
+    return firstValidHourOnDay(dayDate, minReservationStart, null) === null;
+  }
+
+  function disableEndDay(dayDate){
+    const minEnd = startDT;
+    const maxEnd = maxAllowedEnd(startDT);
+    return lastValidHourOnDay(dayDate, minEnd, maxEnd) === null;
+  }
+
+  // ---------------- snapping logic ----------------
+  // Preserve previous hour when user clicks a day (flatpickr often gives 00:00).
+  function preserveHourIfDayClick(chosen, prev){
+    if (!prev) return chosen;
+    const c = new Date(chosen.getTime());
+    const dayChanged =
+      c.getFullYear() !== prev.getFullYear() ||
+      c.getMonth() !== prev.getMonth() ||
+      c.getDate() !== prev.getDate();
+    if (dayChanged && c.getHours() === 0) {
+      c.setHours(prev.getHours(), 0,0,0);
+    }
+    return c;
+  }
+
+  function snapStartToValid(chosen, prevStart){
+    const before = prevStart ? new Date(prevStart.getTime()) : null;
+
+    chosen = snapToHour(preserveHourIfDayClick(chosen, prevStart));
+
+    if (!reserveMode) {
+      return defaultCheckoutStart();
+    }
+
+    // must be >= next full hour
+    if (chosen < minReservationStart) chosen = new Date(minReservationStart.getTime());
+
+    const dayClicked =
+      before &&
+      (chosen.getFullYear() !== before.getFullYear() ||
+      chosen.getMonth() !== before.getMonth() ||
+      chosen.getDate() !== before.getDate());
+
+    // If user clicked a day cell (often yields 00:00), pick the FIRST valid hour that day
+    if (dayClicked && chosen.getHours() === 0) {
+      const first = firstValidHourOnDay(chosen, minReservationStart, null);
+      if (first) return firstOpenHourFrom(first);
+      return firstOpenHourFrom(chosen);
+    }
+
+    // If the chosen hour is blocked (e.g. user arrowed into 16:00),
+    // jump FORWARD to the next open hour so user can reach 19:00 etc.
+    if (isDTBlocked(chosen)) {
+      return firstOpenHourFrom(chosen);
+    }
+
+    return chosen;
+  }
+
+  function snapEndToValid(chosen, prevEnd){
+    chosen = snapToHour(preserveHourIfDayClick(chosen, prevEnd));
+
+    const maxEnd = maxAllowedEnd(startDT);
+
+    // window clamp
+    if (chosen < startDT) chosen = new Date(startDT.getTime());
+    if (maxEnd && chosen > maxEnd) chosen = new Date(maxEnd.getTime());
+
+    // if blocked or day-click weirdness -> snap to LAST valid hour on that day
+    if (chosen.getHours() === 0 || isDTBlocked(chosen)) {
+      const last = lastValidHourOnDay(chosen, startDT, maxEnd);
+      if (last) chosen = last;
+    }
+
+    // if still blocked, walk back hour-by-hour but not below start
+    while (isDTBlocked(chosen) && chosen > startDT) {
+      chosen = snapToHour(addHours(chosen, -1));
+    }
+    if (chosen < startDT) chosen = new Date(startDT.getTime());
+
+    return chosen;
+  }
+
+  // ---------------- initial start/end ----------------
+  let startDT;
+  if (reserveMode) {
+    startDT = composeFromHidden(checkoutDateHidden, checkoutHourHidden, defaultReservationStart());
+    startDT = snapStartToValid(startDT, null);
+  } else {
+    startDT = defaultCheckoutStart();
+  }
+  writeHiddenFromDT(startDT, checkoutDateHidden, checkoutHourHidden);
+
+  let endDT = composeFromHidden(expectedDateHidden, expectedHourHidden, chooseDefaultEnd(startDT));
+  endDT = snapEndToValid(endDT, null);
+  writeHiddenFromDT(endDT, expectedDateHidden, expectedHourHidden);
+
+  // ---------------- recursion guards ----------------
+  let syncingStart = false;
+  let syncingEnd = false;
+  let endWasAuto = true;           // starts as auto
+  let changingEndFromStart = false; // guard when we set end programmatically
+
+  function handleStartPicked(picker, selectedDates) {
+    if (!selectedDates.length) return;
+    if (syncingStart) return;
+    syncingStart = true;
+
+    const prev = startDT;
+    let chosen = selectedDates[0];
+    chosen = snapStartToValid(chosen, prev);
+
+    startDT = chosen;
+    picker.setDate(chosen, false);
+    writeHiddenFromDT(chosen, checkoutDateHidden, checkoutHourHidden);
+
+    // update end based on start change
+    expectedPicker.set('disable', [disableEndDay]);
+
+    changingEndFromStart = true;
+
+    let newEnd;
+    if (endWasAuto) newEnd = chooseDefaultEnd(startDT);
+    else newEnd = expectedPicker.selectedDates[0] ? expectedPicker.selectedDates[0] : chooseDefaultEnd(startDT);
+
+    newEnd = snapEndToValid(newEnd, endDT);
+    endDT = newEnd;
+
+    expectedPicker.setDate(newEnd, false);
+    writeHiddenFromDT(newEnd, expectedDateHidden, expectedHourHidden);
+    expectedPicker.redraw();
+
+    changingEndFromStart = false;
+
+    syncingStart = false;
+  }
+  // ---------------- init pickers ----------------
+  const expectedPicker = flatpickr(expectedDTEl, {
+    enableTime: true,
+    time_24hr: true,
+    minuteIncrement: 60,
+    dateFormat: "Y-m-d H:i",
+    allowInput: false,
+    clickOpens: true,
+
+    disable: [disableEndDay],
+    defaultDate: endDT,
+    defaultHour: endDT.getHours(),
+    defaultMinute: 0,
+
+    // catch hour-arrow changes too
+    onValueUpdate: function(selectedDates){
+      if (!selectedDates.length) return;
+      if (syncingEnd) return;
+      syncingEnd = true;
+      if (!changingEndFromStart) endWasAuto = false;
+
+      const prev = endDT;
+      let chosen = selectedDates[0];
+      chosen = snapEndToValid(chosen, prev);
+
+      endDT = chosen;
+      this.setDate(chosen, false);
+      writeHiddenFromDT(chosen, expectedDateHidden, expectedHourHidden);
+
+      syncingEnd = false;
+    },
+
+    onChange: function(selectedDates){
+      if (!selectedDates.length) return;
+      if (syncingEnd) return;
+      syncingEnd = true;
+      if (!changingEndFromStart) endWasAuto = false;
+
+      const prev = endDT;
+      let chosen = selectedDates[0];
+      chosen = snapEndToValid(chosen, prev);
+
+      endDT = chosen;
+      this.setDate(chosen, false);
+      writeHiddenFromDT(chosen, expectedDateHidden, expectedHourHidden);
+
+      syncingEnd = false;
+    }
+  });
+
+  const checkoutPicker = flatpickr(checkoutDTEl, {
+    enableTime: true,
+    time_24hr: true,
+    minuteIncrement: 60,
+    dateFormat: "Y-m-d H:i",
+    allowInput: false,
+    clickOpens: reserveMode,
+
+    disable: reserveMode ? [disableStartDay] : [],
+    defaultDate: startDT,
+    defaultHour: startDT.getHours(),
+    defaultMinute: 0,
+    onValueUpdate: function(selectedDates){ handleStartPicked(this, selectedDates); },
+    onChange: function(selectedDates){ handleStartPicked(this, selectedDates); },
+
+    onValueUpdate: function(selectedDates){
+      if (!selectedDates.length) return;
+      if (syncingStart) return;
+      syncingStart = true;
+
+      const prev = startDT;
+      let chosen = selectedDates[0];
+      chosen = snapStartToValid(chosen, prev);
+
+      startDT = chosen;
+      this.setDate(chosen, false);
+      writeHiddenFromDT(chosen, checkoutDateHidden, checkoutHourHidden);
+
+      expectedPicker.set('disable', [disableEndDay]);
+
+      changingEndFromStart = true;
+
+      let newEnd;
+      if (endWasAuto) {
+        // recompute default whenever start changes (this is what you wanted)
+        newEnd = chooseDefaultEnd(startDT);
+      } else {
+        // user manually set end earlier -> keep it if still valid, otherwise snap/clamp
+        const cur = expectedPicker.selectedDates[0];
+        newEnd = cur ? cur : chooseDefaultEnd(startDT);
+      }
+
+      newEnd = snapEndToValid(newEnd, endDT);
+      endDT = newEnd;
+
+      expectedPicker.setDate(newEnd, false);
+      writeHiddenFromDT(newEnd, expectedDateHidden, expectedHourHidden);
+      expectedPicker.redraw();
+
+      changingEndFromStart = false;
+
+
+      syncingStart = false;
+    },
+
+    onChange: function(selectedDates){
+      if (!selectedDates.length) return;
+      if (syncingStart) return;
+      syncingStart = true;
+      
+
+      const prev = startDT;
+      let chosen = selectedDates[0];
+      chosen = snapStartToValid(chosen, prev);
+
+      startDT = chosen;
+      this.setDate(chosen, false);
+      writeHiddenFromDT(chosen, checkoutDateHidden, checkoutHourHidden);
+
+      expectedPicker.set('disable', [disableEndDay]);
+
+      changingEndFromStart = true;
+
+      let newEnd;
+      if (endWasAuto) {
+        // recompute default whenever start changes (this is what you wanted)
+        newEnd = chooseDefaultEnd(startDT);
+      } else {
+        // user manually set end earlier -> keep it if still valid, otherwise snap/clamp
+        const cur = expectedPicker.selectedDates[0];
+        newEnd = cur ? cur : chooseDefaultEnd(startDT);
+      }
+
+      newEnd = snapEndToValid(newEnd, endDT);
+      endDT = newEnd;
+
+      expectedPicker.setDate(newEnd, false);
+      writeHiddenFromDT(newEnd, expectedDateHidden, expectedHourHidden);
+      expectedPicker.redraw();
+
+      changingEndFromStart = false;
+
+
+      syncingStart = false;
+    }
+  });
+
+  // normal checkout should stay read-only start
+  if (!reserveMode) {
+    checkoutDTEl.setAttribute('readonly', 'readonly');
+    // NOTE: do NOT add a class that kills pointer-events unless you want it.
+  }
+
+});
+</script>
+
+
+
 
 @stop
 

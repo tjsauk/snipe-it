@@ -14,6 +14,32 @@ use Illuminate\Support\Facades\Storage;
 
 class AssetsTransformer
 {
+    // Prevent running transitions multiple times for the same asset in one request
+    protected static array $processedTransitionAssetIds = [];
+
+    protected function runTimeTransitionsIfNeeded(Asset $asset): void
+    {
+        if (!$asset || isset(self::$processedTransitionAssetIds[$asset->id])) {
+            return;
+        }
+        self::$processedTransitionAssetIds[$asset->id] = true;
+
+        try {
+            // 1) auto checkin first
+            $asset->autoCheckinIfDue();
+            $asset->refresh();
+
+            // 2) then auto checkout any due reservation
+            $asset->autoCheckoutActiveReservationIfDue();
+            $asset->refresh();
+        } catch (\Throwable $e) {
+            \Log::error('Asset list transition processing failed', [
+                'asset_id' => $asset->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
     public function transformAssets(Collection $assets, $total)
     {
         $array = [];
@@ -26,6 +52,8 @@ class AssetsTransformer
 
     public function transformAsset(Asset $asset)
     {
+        // Ensure list view triggers time-based transitions too
+        $this->runTimeTransitionsIfNeeded($asset);
         // This uses the getSettings() method so we're pulling from the cache versus querying the settings on single asset
         $setting = Setting::getSettings();
 
@@ -107,7 +135,7 @@ class AssetsTransformer
             'age' => $asset->purchase_date ? $asset->purchase_date->locale(app()->getLocale())->diffForHumans() : '',
             'last_checkout' => Helper::getFormattedDateObject($asset->last_checkout, 'datetime'),
             'last_checkin' => Helper::getFormattedDateObject($asset->last_checkin, 'datetime'),
-            'expected_checkin' => Helper::getFormattedDateObject($asset->expected_checkin, 'date'),
+            'expected_checkin' => Helper::getFormattedDateObject($asset->expected_checkin, 'datetime'),
             'purchase_cost' => Helper::formatCurrencyOutput($asset->purchase_cost),
             'checkin_counter' => (int) $asset->checkin_counter,
             'checkout_counter' => (int) $asset->checkout_counter,
@@ -286,6 +314,8 @@ class AssetsTransformer
 
     public function transformRequestedAssets(Collection $assets, $total)
     {
+        // Ensure list view triggers time-based transitions too
+        $this->runTimeTransitionsIfNeeded($asset);
         $array = [];
         foreach ($assets as $asset) {
             $array[] = self::transformRequestedAsset($asset);

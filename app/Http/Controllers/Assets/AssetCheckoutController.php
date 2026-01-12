@@ -52,14 +52,32 @@ class AssetCheckoutController extends Controller
         // Invoke the validation to see if the audit will complete successfully
         $asset->setRules($asset->getRules() + $asset->customFieldValidationRules());
 
+        //if ($asset->isInvalid()) {
+        //    return redirect()->route('hardware.edit', $asset)->withErrors($asset->getErrors());
+        //}
         if ($asset->isInvalid()) {
+            \Log::error('Asset invalid on checkout/reserve create()', [
+                'asset_id' => $asset->id,
+                'errors' => $asset->getErrors() ? $asset->getErrors()->toArray() : null,
+                'expected_checkin_raw' => $asset->getRawOriginal('expected_checkin'),
+                'expected_checkin_cast' => $asset->expected_checkin,
+                'last_checkout_raw' => $asset->getRawOriginal('last_checkout'),
+                'last_checkout_cast' => $asset->last_checkout,
+                'model_id' => $asset->model_id,
+            ]);
+
             return redirect()->route('hardware.edit', $asset)->withErrors($asset->getErrors());
         }
 
+
         // NEW: auto-convert due reservations into checkouts
-        $asset->autoCheckoutActiveReservationIfDue();
+        //$asset->autoCheckoutActiveReservationIfDue();
         try {
+            $asset->autoCheckinIfDue();
+            $asset->refresh();
+
             $asset->autoCheckoutActiveReservationIfDue();
+            $asset->refresh();
         } catch (\Throwable $e) {
             \Log::error('autoCheckoutActiveReservationIfDue failed', [
                 'asset_id' => $asset->id,
@@ -171,8 +189,6 @@ class AssetCheckoutController extends Controller
      */
     public function store(AssetCheckoutRequest $request, $assetId) : RedirectResponse
     {
-
-
         try {
             if (! $asset = Asset::find($assetId)) {
                 return redirect()->route('hardware.index')
@@ -197,14 +213,10 @@ class AssetCheckoutController extends Controller
                 ]);
             }
 
-            
-
             // Authorize differently for reserve vs normal checkout
             if ($reserveMode) {
-                // Reservation only needs view permission (so restricted users can still reserve)
                 $this->authorize('view', $asset);
             } else {
-                // Normal checkout uses existing checkout policy
                 $this->authorize('checkout', $asset);
             }
 
@@ -220,81 +232,82 @@ class AssetCheckoutController extends Controller
 
             $asset = $this->updateAssetLocation($asset, $target);
 
-            
-
-            // Checkout / reservation start date (as string)
-            $checkout_at = $request->filled('checkout_at')
-                ? $request->get('checkout_at')
-                : date('Y-m-d');
-
-            // Expected checkin (may be null, we will default later)
-            $expected_checkin = $request->filled('expected_checkin')
-                ? $request->get('expected_checkin')
-                : null;
-
-            // Convert to Carbon
-            $checkoutDate = Carbon::parse($checkout_at)->startOfDay();
-
-            // Prevent future dates for NORMAL checkout
-            if (!$reserveMode && $checkoutDate->isFuture()) {
-                return redirect()->route('hardware.checkout.create', $asset)
-                    ->withInput()
-                    ->with('error', 'Checkout date cannot be in the future. Use a reservation instead.');
+            // ---- REQUIRE DATES ----
+            if (!$request->filled('checkout_at')) {
+                return back()->withInput()->with('error', 'Checkout date is required.');
+            }
+            if (!$request->filled('expected_checkin')) {
+                return back()->withInput()->with('error', 'Expected checkin is required.');
             }
 
-            // Reservation must start in the future
-            if ($reserveMode && !$checkoutDate->isFuture()) {
-                return redirect()->route('hardware.reserve.create', $asset)
-                    ->withInput()
-                    ->with('error', 'Reservations must start in the future.');
+            $checkout_at_date = $request->get('checkout_at');         // Y-m-d
+            $expected_date    = $request->get('expected_checkin');    // Y-m-d
+
+            $checkoutHour = $request->filled('checkout_hour')
+                ? (int) $request->get('checkout_hour')
+                : 0;
+
+            $expectedHour = $request->filled('expected_checkin_hour')
+                ? (int) $request->get('expected_checkin_hour')
+                : 0;
+
+            // Build hour-accurate datetimes
+            $tz = config('app.timezone');
+
+            $checkoutDT = Carbon::parse($checkout_at_date, $tz)->setTime($checkoutHour, 0, 0);
+
+            // UI end is "last occupied hour start" -> store boundary as +1 hour
+            $expectedSlotStart = Carbon::parse($expected_date, $tz)->setTime($expectedHour, 0, 0);
+            $expectedDT = $expectedSlotStart->copy()->addHour();  // <-- critical
+
+
+            // Normal checkout cannot be in the future (hour-accurate)
+            if (!$reserveMode && $checkoutDT->isFuture()) {
+                return back()->withInput()->with('error', 'Checkout time cannot be in the future. Use a reservation instead.');
             }
 
-            // Expected checkin date validation
-            $expectedDate = null;
-            if ($expected_checkin) {
-                $expectedDate = Carbon::parse($expected_checkin)->startOfDay();
-
-                // Must not be before checkout/reservation start
-                if ($expectedDate->lt($checkoutDate)) {
-                    return back()
-                        ->withInput()
-                        ->with('error', 'Expected checkin date must be on or after the checkout date.');
-                }
-
-                // For reservations, end must be in the future as well
-                if ($reserveMode && !$expectedDate->isFuture()) {
-                    return back()
-                        ->withInput()
-                        ->with('error', 'Reservation end date must be in the future.');
-                }
+            // Reservation must start in the future (hour-accurate)
+            if ($reserveMode && !$checkoutDT->isFuture()) {
+                return back()->withInput()->with('error', 'Reservations must start in the future.');
             }
 
-            // Effective end date: explicit expected end, or +2 weeks from start.
-            $windowEnd = $expectedDate
-                ? $expectedDate->copy()->endOfDay()
-                : $checkoutDate->copy()->addWeeks(2)->endOfDay();
+            // Expected must be >= start
+            if ($expectedDT->lte($checkoutDT)) {
+                return back()->withInput()->with('error', 'Expected checkin must be after the checkout time.');
+            }
+
+
+            // For reservations, end must also be in the future
+            if ($reserveMode && !$expectedDT->isFuture()) {
+                return back()->withInput()->with('error', 'Reservation end time must be in the future.');
+            }
+
+            // This is the actual window we use for overlap checks
+            $windowStartDT = $checkoutDT->copy();
+            $windowEndDT   = $expectedDT->copy();
+
+            // Strings stored into asset/checkOut()
+            $checkout_at      = $checkoutDT->format('Y-m-d H:i:s');
+            $expected_checkin = $expectedDT->format('Y-m-d H:i:s');
 
             if ($request->filled('status_id')) {
                 $asset->status_id = $request->get('status_id');
             }
 
             // License seats should only follow actual checkouts, not reservations
-            if(! $reserveMode && !empty($asset->licenseseats->all())){
-                if(request('checkout_to_type') == 'user') {
-                    foreach ($asset->licenseseats as $seat){
+            if (! $reserveMode && !empty($asset->licenseseats->all())) {
+                if ($request->get('checkout_to_type') == 'user') {
+                    foreach ($asset->licenseseats as $seat) {
                         $seat->assigned_to = $target->id;
                         $seat->save();
                     }
                 }
             }
 
-            // Add any custom fields that should be included in the checkout
             $asset->customFieldsForCheckinCheckout('display_checkout');
 
             $settings = \App\Models\Setting::getSettings();
 
-            // We have to check whether $target->company_id is null here since locations don't have a company yet
-            // Company restriction: this applies to both checkout and reservation
             if (($settings->full_multiple_companies_support)
                 && (!is_null($target->company_id))
                 && (!is_null($asset->company_id))) {
@@ -307,17 +320,14 @@ class AssetCheckoutController extends Controller
 
             session()->put([
                 'redirect_option' => $request->get('redirect_option'),
-                 'checkout_to_type' => $request->get('checkout_to_type')]);
+                'checkout_to_type' => $request->get('checkout_to_type')
+            ]);
 
-
-            // NEW: Reservation flow
+            /***************************************************************
+             * RESERVATION FLOW
+             **************************************************************/
             if ($reserveMode) {
-                $startDate = $checkoutDate;
-                $endDate   = $windowEnd;
 
-                // Target user for reservation:
-                // - Super users can choose any user via the normal checkout-to-user selector
-                // - Restricted users will effectively be forced to themselves
                 $reservationUserId = null;
                 if ($request->get('checkout_to_type') === 'user' && $target) {
                     $reservationUserId = $target->id;
@@ -325,44 +335,36 @@ class AssetCheckoutController extends Controller
                     $reservationUserId = auth()->id();
                 }
 
-                // Enforce: one active reservation per user per asset
+                // one active reservation per user per asset
                 $existing = $asset->activeReservationForUser($reservationUserId);
                 if ($existing) {
                     return redirect()->route('hardware.show', $asset)
                         ->with('error', 'You already have an active reservation for this asset.');
                 }
 
-                // NO overlap with ongoing checkout period
-                if ($asset->overlapsOngoingCheckout($startDate, $endDate)) {
-                    return back()
-                        ->withInput()
-                        ->with('error', 'Reservation overlaps an ongoing checkout period.');
+                // NO overlap with ongoing checkout period (hour-accurate)
+                if ($asset->overlapsOngoingCheckout($windowStartDT, $windowEndDT)) {
+                    return back()->withInput()->with('error', 'Reservation overlaps an ongoing checkout period.');
                 }
-                
-                // ---- NO OVERLAP WITH CURRENT CHECKOUT ----
-                // If the asset is currently checked out (assigned_to) and has an expected_checkin,
-                // you can only reserve starting AFTER that expected_checkin date.
+
+                // If currently checked out, reservation must start AFTER expected_checkin moment
                 if (!is_null($asset->assigned_to) && $asset->expected_checkin) {
-                    $currentEnd = Carbon::parse($asset->expected_checkin)->endOfDay();
-                    if ($startDate->lte($currentEnd)) {
-                        return back()
-                            ->withInput()
-                            ->with('error', 'Reservation overlaps an ongoing checkout period.');
+                    $currentEnd = Carbon::parse($asset->expected_checkin);
+                    if ($windowStartDT->lt($currentEnd)) {
+                        return back()->withInput()->with('error', 'Reservation overlaps an ongoing checkout period.');
                     }
                 }
 
-                // NO overlap with ANY other reservation
-                if ($asset->overlapsReservations($startDate, $endDate)) {
-                    return back()
-                        ->withInput()
-                        ->with('error', 'Reservation overlaps an existing reservation.');
+                // NO overlap with ANY other reservation (hour-accurate)
+                if ($asset->overlapsReservations($windowStartDT, $windowEndDT)) {
+                    return back()->withInput()->with('error', 'Reservation overlaps an existing reservation.');
                 }
 
                 AssetReservation::create([
                     'asset_id'       => $asset->id,
                     'user_id'        => $reservationUserId,
-                    'reserved_from'  => $startDate->toDateString(),
-                    'reserved_until' => $endDate->toDateString(),
+                    'reserved_from'  => $windowStartDT->format('Y-m-d H:i:s'),
+                    'reserved_until' => $windowEndDT->format('Y-m-d H:i:s'),
                     'status'         => 'active',
                 ]);
 
@@ -373,11 +375,9 @@ class AssetCheckoutController extends Controller
             /***************************************************************
              * NORMAL CHECKOUT FLOW
              **************************************************************/
+            $checkoutStart = $windowStartDT;
+            $checkoutEnd   = $windowEndDT;
 
-            $checkoutStart = $checkoutDate;
-            $checkoutEnd   = $windowEnd;
-
-            // User for checkout (could be someone else if super user)
             $checkoutUserId = null;
             if ($request->get('checkout_to_type') === 'user' && $target) {
                 $checkoutUserId = $target->id;
@@ -385,41 +385,32 @@ class AssetCheckoutController extends Controller
                 $checkoutUserId = auth()->id();
             }
 
-            // Check if this checkout should fulfill an existing reservation for the same user
-            $userReservation = $checkoutUserId
-                ? $asset->activeReservationForUser($checkoutUserId)
-                : null;
-
+            // Check if this checkout should fulfill the user's reservation (hour-accurate)
+            $userReservation = $checkoutUserId ? $asset->activeReservationForUser($checkoutUserId) : null;
             $fulfillReservation = false;
 
             if ($userReservation) {
-                $resFrom  = Carbon::parse($userReservation->reserved_from)->startOfDay();
+                $resFrom  = Carbon::parse($userReservation->reserved_from);
                 $resUntil = $userReservation->reserved_until
-                    ? Carbon::parse($userReservation->reserved_until)->endOfDay()
-                    : $resFrom->copy()->endOfDay();
+                    ? Carbon::parse($userReservation->reserved_until)
+                    : $resFrom->copy();
 
-                // Basic overlap check with the user's own reservation
                 $overlap = $checkoutStart <= $resUntil && $checkoutEnd >= $resFrom;
                 if ($overlap) {
                     $fulfillReservation = true;
                 }
             }
 
-            // Disallow overlap with other users' reservations
+            // Disallow overlap with other users' reservations (hour-accurate)
             if ($asset->overlapsReservations($checkoutStart, $checkoutEnd, $checkoutUserId)) {
-                return back()
-                    ->withInput()
-                    ->with('error', 'Checkout overlaps an existing reservation.');
+                return back()->withInput()->with('error', 'Checkout overlaps an existing reservation.');
             }
 
-            // Disallow overlap with any current checkout period as well
+            // Disallow overlap with an ongoing checkout window (hour-accurate)
             if ($asset->overlapsOngoingCheckout($checkoutStart, $checkoutEnd)) {
-                return back()
-                    ->withInput()
-                    ->with('error', 'Checkout overlaps an ongoing checkout period.');
+                return back()->withInput()->with('error', 'Checkout overlaps an ongoing checkout period.');
             }
 
-            // Perform the actual checkout
             if ($asset->checkOut(
                 $target,
                 $admin,
@@ -428,7 +419,6 @@ class AssetCheckoutController extends Controller
                 $request->get('note'),
                 $request->get('name')
             )) {
-                // If this checkout fulfills the user's reservation, mark it so
                 if ($fulfillReservation && $userReservation) {
                     $userReservation->status = 'fulfilled';
                     $userReservation->save();
@@ -438,17 +428,17 @@ class AssetCheckoutController extends Controller
                     ->with('success', trans('admin/hardware/message.checkout.success'));
             }
 
-            // Redirect to the asset management page with error
             return redirect()->route('hardware.checkout.create', $asset)
                 ->with('error', trans('admin/hardware/message.checkout.error').$asset->getErrors());
 
         } catch (ModelNotFoundException $e) {
             return redirect()->back()
-            ->with('error', trans('admin/hardware/message.checkout.error'))
-            ->withErrors($asset->getErrors());
+                ->with('error', trans('admin/hardware/message.checkout.error'))
+                ->withErrors($asset->getErrors());
         } catch (CheckoutNotAllowed $e) {
             return redirect()->back()
-            ->with('error', $e->getMessage());
+                ->with('error', $e->getMessage());
         }
     }
+
 }

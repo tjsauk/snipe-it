@@ -366,6 +366,22 @@ class AssetsController extends Controller
         $this->authorize('view', $asset);
         $settings = Setting::getSettings();
 
+        // Lazy time-based transitions:
+        // 1) auto-checkin if due (autoreturn)
+        // 2) then reservation->checkout if due
+        try {
+            $asset->autoCheckinIfDue();
+            $asset->refresh();
+
+            $asset->autoCheckoutActiveReservationIfDue();
+            $asset->refresh();
+        } catch (\Throwable $e) {
+            \Log::error('Lazy asset transitions failed', [
+                'asset_id' => $asset->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         if (isset($asset)) {
             $audit_log = Actionlog::where('action_type', '=', 'audit')
                 ->where('item_id', '=', $asset->id)

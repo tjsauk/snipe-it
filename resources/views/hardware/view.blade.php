@@ -463,12 +463,12 @@
                                             @endif
                                             <li>
                                                 <x-icon type="calendar" class="fa-fw" />
-                                                {{ trans('admin/hardware/form.checkout_date') }}: {{ Helper::getFormattedDateObject($asset->last_checkout, 'date', false) }}
+                                                {{ trans('admin/hardware/form.checkout_date') }}: {{ Helper::getFormattedDateObject($asset->last_checkout, 'datetime', false) }}
                                             </li>
-                                            @if (isset($asset->expected_checkin))
+                                            @if ($asset->expected_checkin_ui)
                                                 <li>
                                                     <x-icon type="calendar" class="fa-fw" />
-                                                    {{ trans('general.expected_checkin') }}: {{ Helper::getFormattedDateObject($asset->expected_checkin, 'date', false) }}
+                                                    {{ trans('general.expected_checkin') }}: {{ Helper::getFormattedDateObject($asset->expected_checkin_ui, 'datetime', false) }}
                                                 </li>
                                             @endif
                                         </ul>
@@ -565,16 +565,13 @@
                                             {{-- List reservations with user and date range --}}
                                             <ul style="margin-top: 5px; padding-left: 18px;">
                                                 @foreach($activeReservations as $res)
-                                                    @php
-                                                        $until = $res->reserved_until ?: $res->reserved_from;
-                                                    @endphp
                                                     <li>
                                                         {{ optional($res->user)->username
                                                             ?? optional($res->user)->email
                                                             ?? 'User #'.$res->user_id }}:
-                                                        {{ Helper::getFormattedDateObject($res->reserved_from, 'date', false) }}
+                                                        {{ Helper::getFormattedDateObject($res->reserved_from, 'datetime', false) }}
                                                         –
-                                                        {{ Helper::getFormattedDateObject($until, 'date', false) }}
+                                                        {{ Helper::getFormattedDateObject($res->reserved_until_ui, 'datetime', false) }}
                                                     </li>
                                                 @endforeach
                                             </ul>
@@ -1184,7 +1181,7 @@
                                             </div>
                                         @endif
 
-                                        @if ($asset->expected_checkin!='')
+                                        @if ($asset->expected_checkin_ui)
                                             <div class="row">
                                                 <div class="col-md-3">
                                                     <strong>
@@ -1192,7 +1189,7 @@
                                                     </strong>
                                                 </div>
                                                 <div class="col-md-9">
-                                                    {{ Helper::getFormattedDateObject($asset->expected_checkin, 'date', false) }}
+                                                    {{ Helper::getFormattedDateObject($asset->expected_checkin_ui, 'datetime', false) }}
                                                 </div>
                                             </div>
                                         @endif

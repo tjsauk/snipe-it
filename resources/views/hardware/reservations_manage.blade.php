@@ -38,11 +38,11 @@
                                             ?? ('User #'.$reservation->user_id) }}
                                     </td>
                                     <td>
-                                        {{ \App\Helpers\Helper::getFormattedDateObject($reservation->reserved_from, 'date', false) }}
+                                        {{ \App\Helpers\Helper::getFormattedDateObject($reservation->reserved_from, 'datetime', false) }}
                                     </td>
                                     <td>
                                         @if ($reservation->reserved_until)
-                                            {{ \App\Helpers\Helper::getFormattedDateObject($reservation->reserved_until, 'date', false) }}
+                                            {{ \App\Helpers\Helper::getFormattedDateObject($reservation->reserved_until, 'datetime', false) }}
                                         @else
                                             —
                                         @endif

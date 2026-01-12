@@ -21,8 +21,8 @@ class AssetReservation extends Model
     ];
 
     protected $casts = [
-        'reserved_from' => 'date',
-        'reserved_until' => 'date',
+        'reserved_from' => 'datetime',
+        'reserved_until' => 'datetime',
     ];
 
     public function asset()
@@ -41,6 +41,13 @@ class AssetReservation extends Model
         return $query->where('status', 'active');
     }
 
+    public function getReservedUntilUiAttribute()
+    {
+        $until = $this->reserved_until ?: $this->reserved_from;
+        if (!$until) return null;
+
+        return \Carbon\Carbon::parse($until)->subHour();
+    }
     /** Is this reservation currently in its active window (today between from & until)? */
     public function isCurrentWindow(): bool
     {
