@@ -246,7 +246,7 @@ class SuppliersController extends Controller
     public function selectlist(Request $request) : array
     {
 
-        $this->authorize('view.selectlists');
+        $this->authorize('view', Supplier::class);
 
         $suppliers = Supplier::select([
             'id',

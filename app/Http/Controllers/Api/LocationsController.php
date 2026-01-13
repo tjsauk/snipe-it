@@ -403,7 +403,7 @@ class LocationsController extends Controller
         // Otherwise, we do our normal check that they can view select lists.
         $request->headers->get('referer') === route('profile')
             ? $this->authorize('self.edit_location')
-            : $this->authorize('view.selectlists');
+            : $this->authorize('view',Location::class);
 
         $locations = Location::select([
             'locations.id',
