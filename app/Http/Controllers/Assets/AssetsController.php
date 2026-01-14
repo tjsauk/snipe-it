@@ -465,7 +465,7 @@ class AssetsController extends Controller
     public function templateAsset(Request $request)
 {
     // Optional: basic authz
-    $this->authorize('viewAny', Asset::class);
+    $this->authorize('view', Asset::class);
 
     $q = trim($request->get('q', ''));
 
@@ -496,7 +496,7 @@ class AssetsController extends Controller
 
 public function templateAssetDetail(Asset $asset)
 {
-    $this->authorize('view', $asset);
+    $this->authorize('view', Asset::class);
 
     $modelName = null;
     if ($asset->model_id) {

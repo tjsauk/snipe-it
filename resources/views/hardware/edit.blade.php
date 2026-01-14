@@ -65,24 +65,27 @@
       @endif
     </div>
 
-    {{-- New: quantity field for creating multiple assets --}}
-    <div class="form-group">
-        <label for="asset_quantity" class="col-md-3 control-label">
-            Quantity
-        </label>
-        <div class="col-md-7 col-sm-12">
-            <input class="form-control"
-                type="number"
-                name="asset_quantity"
-                id="asset_quantity"
-                min="1"
-                value="{{ old('asset_quantity', 1) }}">
-            {!! $errors->first('asset_quantity', '<span class="alert-msg"><i class="fas fa-times"></i> :message</span>') !!}
-            <p class="help-block">
-                How many assets to create starting from the asset tag above.
-            </p>
+    @php $u = auth()->user(); @endphp
+    @if (!$item->id && $u && method_exists($u, 'isSuperUser') && $u->isSuperUser())
+        {{-- New: quantity field for creating multiple assets --}}
+        <div class="form-group">
+            <label for="asset_quantity" class="col-md-3 control-label">
+                Quantity
+            </label>
+            <div class="col-md-7 col-sm-12">
+                <input class="form-control"
+                    type="number"
+                    name="asset_quantity"
+                    id="asset_quantity"
+                    min="1"
+                    value="{{ old('asset_quantity', 1) }}">
+                {!! $errors->first('asset_quantity', '<span class="alert-msg"><i class="fas fa-times"></i> :message</span>') !!}
+                <p class="help-block">
+                    How many assets to create starting from the asset tag above.
+                </p>
+            </div>
         </div>
-    </div>
+    @endif
 
 
     @include ('partials.forms.edit.serial', ['fieldname'=> 'serials[1]', 'old_val_name' => 'serials.1', 'translated_serial' => trans('admin/hardware/form.serial')])

@@ -71,7 +71,7 @@ class NotesController extends Controller
      */
     public function store(Request $request, Asset $asset): JsonResponse
     {
-        $this->authorize('update', $asset);
+        $this->authorize('view', $asset);
 
         if ($request->input('note', '') == '') {
             return response()->json(Helper::formatStandardApiResponse('error', null, trans('validation.required', ['attribute' => 'note'])), 422);
