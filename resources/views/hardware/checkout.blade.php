@@ -244,7 +244,8 @@
                         </div>
 
                         <!-- Expected Checkin Date + Time -->
-                        <div class="form-group {{ $errors->has('expected_checkin') ? 'error' : '' }}">
+                        <div id="expected_checkin_group" class="form-group {{ $errors->has('expected_checkin') ? 'error' : '' }}">
+
                             <label for="expected_checkin_dt" class="col-md-3 control-label">
                                 {{ trans('admin/hardware/form.expected_checkin') }}
                             </label>
@@ -399,7 +400,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   const checkoutHourHidden = document.getElementById('checkout_hour');
   const expectedHourHidden = document.getElementById('expected_checkin_hour');
-
+  
   if (!checkoutDTEl || !expectedDTEl || !checkoutDateHidden || !expectedDateHidden || !checkoutHourHidden || !expectedHourHidden) return;
 
   // Make sure the inputs can open flatpickr (themes sometimes kill pointer events)
@@ -864,6 +865,75 @@ document.addEventListener('DOMContentLoaded', function () {
     checkoutDTEl.setAttribute('readonly', 'readonly');
     // NOTE: do NOT add a class that kills pointer-events unless you want it.
   }
+    // ---------------- expected_checkin show/hide based on checkout target ----------------
+    const expectedGroup = document.getElementById('expected_checkin_group');
+
+    function getCheckoutToType() {
+      // radios
+      const checked = document.querySelector('input[name="checkout_to_type"]:checked');
+      if (checked) return checked.value;
+
+      // select
+      const sel = document.querySelector('select[name="checkout_to_type"]');
+      if (sel) return sel.value;
+
+      // fallback: hidden input (some setups use this)
+      const hidden = document.querySelector('input[name="checkout_to_type"][type="hidden"]');
+      if (hidden) return hidden.value;
+
+      return null;
+    }
+
+    function setExpectedVisibility() {
+      if (!expectedGroup) return;
+
+      const t = getCheckoutToType();
+
+      const shouldHide = (t === 'asset'); // <-- if your value differs, tell me what it is and I’ll adjust
+
+      if (shouldHide) {
+        expectedGroup.style.display = 'none';
+
+        // disable visible input
+        expectedDTEl.value = '';
+        expectedDTEl.setAttribute('disabled', 'disabled');
+
+        // clear submitted hidden values so backend doesn't see expected_checkin required
+        expectedDateHidden.value = '';
+        expectedHourHidden.value = '';
+      } else {
+        expectedGroup.style.display = '';
+
+        expectedDTEl.removeAttribute('disabled');
+
+        // If empty, reinitialize to a valid end based on current startDT
+        if (!expectedDateHidden.value || expectedHourHidden.value === '') {
+          let restored = chooseDefaultEnd(startDT);
+          restored = snapEndToValid(restored, endDT);
+          endDT = restored;
+
+          expectedPicker.setDate(restored, false);
+          writeHiddenFromDT(restored, expectedDateHidden, expectedHourHidden);
+          expectedPicker.redraw();
+        }
+      }
+    }
+
+    // Run once on load
+    setExpectedVisibility();
+
+    // Event delegation: catches radio changes, select changes, dynamic DOM swaps
+    document.addEventListener('change', function(e) {
+      if (
+        e.target &&
+        (e.target.matches('input[name="checkout_to_type"]') ||
+        e.target.matches('select[name="checkout_to_type"]'))
+      ) {
+        setExpectedVisibility();
+      }
+    });
+
+
 
 });
 </script>

@@ -229,6 +229,14 @@ class AssetCheckoutController extends Controller
 
             $target = $this->determineCheckoutTarget();
             session()->put(['checkout_to_type' => $target]);
+            // Determine if this checkout is to another asset
+            // In Snipe-IT, "checkout_to_type" is usually a string like: user, location, asset
+            $isCheckoutToAsset = ($request->get('checkout_to_type') === 'asset');
+
+            // Reservations always need an end time, so only apply this to normal checkout flow
+            if ($reserveMode) {
+                $isCheckoutToAsset = false;
+            }
 
             $asset = $this->updateAssetLocation($asset, $target);
 
@@ -236,29 +244,38 @@ class AssetCheckoutController extends Controller
             if (!$request->filled('checkout_at')) {
                 return back()->withInput()->with('error', 'Checkout date is required.');
             }
-            if (!$request->filled('expected_checkin')) {
+
+            // Expected checkin is required for reservations and normal checkouts EXCEPT checkout-to-asset
+            if (!$isCheckoutToAsset && !$request->filled('expected_checkin')) {
                 return back()->withInput()->with('error', 'Expected checkin is required.');
             }
 
-            $checkout_at_date = $request->get('checkout_at');         // Y-m-d
-            $expected_date    = $request->get('expected_checkin');    // Y-m-d
+            $checkout_at_date = $request->get('checkout_at'); // Y-m-d
 
             $checkoutHour = $request->filled('checkout_hour')
                 ? (int) $request->get('checkout_hour')
                 : 0;
 
-            $expectedHour = $request->filled('expected_checkin_hour')
-                ? (int) $request->get('expected_checkin_hour')
-                : 0;
-
-            // Build hour-accurate datetimes
+            // Build hour-accurate datetime for checkout start
             $tz = config('app.timezone');
-
             $checkoutDT = Carbon::parse($checkout_at_date, $tz)->setTime($checkoutHour, 0, 0);
 
-            // UI end is "last occupied hour start" -> store boundary as +1 hour
-            $expectedSlotStart = Carbon::parse($expected_date, $tz)->setTime($expectedHour, 0, 0);
-            $expectedDT = $expectedSlotStart->copy()->addHour();  // <-- critical
+            // Build expected end datetime
+            $expectedDT = null;
+
+            if (!$isCheckoutToAsset) {
+
+                $expected_date = $request->get('expected_checkin'); // Y-m-d
+
+                $expectedHour = $request->filled('expected_checkin_hour')
+                    ? (int) $request->get('expected_checkin_hour')
+                    : 0;
+
+                // UI end is "last occupied hour start" -> store boundary as +1 hour
+                $expectedSlotStart = Carbon::parse($expected_date, $tz)->setTime($expectedHour, 0, 0);
+                $expectedDT = $expectedSlotStart->copy()->addHour(); // <-- keep your existing rule
+            }
+
 
 
             // Normal checkout cannot be in the future (hour-accurate)
@@ -271,24 +288,32 @@ class AssetCheckoutController extends Controller
                 return back()->withInput()->with('error', 'Reservations must start in the future.');
             }
 
-            // Expected must be >= start
-            if ($expectedDT->lte($checkoutDT)) {
-                return back()->withInput()->with('error', 'Expected checkin must be after the checkout time.');
-            }
+            // Expected must be > start (only if we have an expected end)
+            if (!$isCheckoutToAsset) {
+                if ($expectedDT->lte($checkoutDT)) {
+                    return back()->withInput()->with('error', 'Expected checkin must be after the checkout time.');
+                }
 
-
-            // For reservations, end must also be in the future
-            if ($reserveMode && !$expectedDT->isFuture()) {
-                return back()->withInput()->with('error', 'Reservation end time must be in the future.');
+                // For reservations, end must also be in the future
+                if ($reserveMode && !$expectedDT->isFuture()) {
+                    return back()->withInput()->with('error', 'Reservation end time must be in the future.');
+                }
             }
 
             // This is the actual window we use for overlap checks
             $windowStartDT = $checkoutDT->copy();
-            $windowEndDT   = $expectedDT->copy();
 
-            // Strings stored into asset/checkOut()
-            $checkout_at      = $checkoutDT->format('Y-m-d H:i:s');
-            $expected_checkin = $expectedDT->format('Y-m-d H:i:s');
+            // For checkout-to-asset, there is no time window end.
+            // Use start as placeholder; overlap checks for normal checkout rely on expectedDT anyway.
+            $windowEndDT = $isCheckoutToAsset ? $checkoutDT->copy() : $expectedDT->copy();
+
+            $checkout_at = $checkoutDT->format('Y-m-d H:i:s');
+
+            $expected_checkin = null;
+            if (!$isCheckoutToAsset) {
+                $expected_checkin = $expectedDT->format('Y-m-d H:i:s');
+            }
+
 
             if ($request->filled('status_id')) {
                 $asset->status_id = $request->get('status_id');
@@ -401,14 +426,16 @@ class AssetCheckoutController extends Controller
                 }
             }
 
-            // Disallow overlap with other users' reservations (hour-accurate)
-            if ($asset->overlapsReservations($checkoutStart, $checkoutEnd, $checkoutUserId)) {
-                return back()->withInput()->with('error', 'Checkout overlaps an existing reservation.');
-            }
+            if (!$isCheckoutToAsset) {
+                // Disallow overlap with other users' reservations (hour-accurate)
+                if ($asset->overlapsReservations($checkoutStart, $checkoutEnd, $checkoutUserId)) {
+                    return back()->withInput()->with('error', 'Checkout overlaps an existing reservation.');
+                }
 
-            // Disallow overlap with an ongoing checkout window (hour-accurate)
-            if ($asset->overlapsOngoingCheckout($checkoutStart, $checkoutEnd)) {
-                return back()->withInput()->with('error', 'Checkout overlaps an ongoing checkout period.');
+                // Disallow overlap with an ongoing checkout window (hour-accurate)
+                if ($asset->overlapsOngoingCheckout($checkoutStart, $checkoutEnd)) {
+                    return back()->withInput()->with('error', 'Checkout overlaps an ongoing checkout period.');
+                }
             }
 
             if ($asset->checkOut(
