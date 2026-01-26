@@ -4,9 +4,9 @@
     /** @var \App\Models\User $authUser */
     $authUser = auth()->user();
     $onlySelfCheckout = $authUser && method_exists($authUser, 'mustSelfCheckout') && $authUser->mustSelfCheckout();
-    @php
-        $checkoutType = old('checkout_to_type', session('checkout_to_type') ?: 'user');
-    @endphp
+    
+    $checkoutType = old('checkout_to_type', session('checkout_to_type') ?: 'user');
+    
 
     // Use the actual variable name used in this view:
     // if it's $item instead of $asset, swap accordingly.
