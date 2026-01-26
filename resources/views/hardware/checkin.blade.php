@@ -41,6 +41,8 @@
                                         @endif
                                         {{csrf_field()}}
 
+                                        <input type="hidden" name="return_to" value="{{ request('return_to') }}">
+                                        
                                         @if ($asset->company)
                                             <!-- accessory name -->
                                             <div class="form-group">

@@ -436,6 +436,10 @@
           </div><!-- /.tab-pane -->
 
           <div class="tab-pane" id="assets">
+            @php
+              $returnToAssets = url()->current() . '#assets';
+            @endphp
+
             <!-- checked out assets table -->
 
             <table
@@ -603,7 +607,7 @@
                         <td class="hidden-print">
                           {{-- Checkin (if user can checkin this asset) --}}
                           @can('checkin', $asset)
-                            <a href="{{ route('hardware.checkin.create', $asset->id) }}"
+                            <a href="{{ route('hardware.checkin.create', $asset->id) }}?return_to={{ urlencode($returnToAssets) }}"
                               class="btn btn-sm btn-primary"
                               style="margin-right: 5px;">
                               {{ trans('admin/hardware/general.checkin') }}
@@ -619,7 +623,7 @@
 
                           {{-- Reserve --}}
                           @if (($asset->assetstatus) && ($asset->assetstatus->deployable=='1') && ($asset->deleted_at=='') )
-                            <a href="{{ route('hardware.reserve.create', $asset->id) }}?reserve=1"
+                            <a href="{{ route('hardware.reserve.create', $asset->id) }}?reserve=1&return_to={{ urlencode($returnToAssets) }}"
                               class="btn btn-sm btn-warning"
                               style="margin-right: 5px;">
                               Reserve
@@ -633,6 +637,7 @@
                                   style="display:inline;">
                               @csrf
                               @method('DELETE')
+                              <input type="hidden" name="return_to" value="{{ $returnToAssets }}">
                               <button type="submit" class="btn btn-sm btn-default">
                                 Cancel
                               </button>
@@ -642,7 +647,7 @@
                           {{-- Superuser manage reservations --}}
                           @if ($currentUser && method_exists($currentUser, 'isSuperUser') && $currentUser->isSuperUser())
                             @if ($asset->activeReservations()->exists())
-                              <a href="{{ route('hardware.reserve.manage', $asset->id) }}"
+                              <a href="{{ route('hardware.reserve.manage', $asset->id) }}?return_to={{ urlencode($returnToAssets) }}"
                                 class="btn btn-sm btn-default"
                                 style="margin-left: 5px;">
                                 Manage reservations
@@ -664,6 +669,10 @@
           </div><!-- /asset -->
 
           <div class="tab-pane" id="reservations">
+            @php
+              $returnToReservations = url()->current() . '#reservations';
+            @endphp
+
             <table
               data-cookie-id-table="userReservedAssets"
               data-id-table="userReservedAssets"
@@ -683,12 +692,33 @@
               <thead>
                 <tr>
                   <th class="col-md-1">#</th>
-                  <th class="col-md-2" data-field="asset_tag" data-sortable="true">{{ trans('admin/hardware/table.asset_tag') }}</th>
-                  <th class="col-md-3" data-field="name" data-sortable="true">{{ trans('general.name') }}</th>
-                  <th class="col-md-3" data-field="model" data-sortable="true">{{ trans('admin/hardware/table.asset_model') }}</th>
-                  <th class="col-md-2 hidden-print">{{ trans('general.action') }}</th>
+
+                  <th class="col-md-1">
+                    {{ trans('general.image') }}
+                  </th>
+
+                  <th class="col-md-2">
+                    {{ trans('general.category') }}
+                  </th>
+
+                  <th class="col-md-2" data-field="asset_tag" data-sortable="true">
+                    {{ trans('admin/hardware/table.asset_tag') }}
+                  </th>
+
+                  <th class="col-md-3" data-field="name" data-sortable="true">
+                    {{ trans('general.name') }}
+                  </th>
+
+                  <th class="col-md-3" data-field="model" data-sortable="true">
+                    {{ trans('admin/hardware/table.asset_model') }}
+                  </th>
+
+                  <th class="col-md-2 hidden-print">
+                    {{ trans('general.action') }}
+                  </th>
                 </tr>
               </thead>
+
 
               <tbody>
                 @php $rCounter = 1; @endphp
@@ -701,6 +731,28 @@
 
                   <tr>
                     <td>{{ $rCounter }}</td>
+
+                      {{-- IMAGE --}}
+                    <td>
+                      @if (($asset->image) && ($asset->image!=''))
+                        <img src="{{ Storage::disk('public')->url(app('assets_upload_path').e($asset->image)) }}"
+                            style="max-height: 30px; width: auto"
+                            class="img-responsive"
+                            alt="">
+                      @elseif (($asset->model) && ($asset->model->image!=''))
+                        <img src="{{ Storage::disk('public')->url(app('models_upload_path').e($asset->model->image)) }}"
+                            style="max-height: 30px; width: auto"
+                            class="img-responsive"
+                            alt="">
+                      @endif
+                    </td>
+
+                    {{-- CATEGORY --}}
+                    <td>
+                      @if (($asset->model) && ($asset->model->category))
+                        {!! $asset->model->category->present()->formattedNameLink !!}
+                      @endif
+                    </td>
 
                     <td>
                       <a href="{{ route('hardware.show', $asset->id) }}">
@@ -723,7 +775,7 @@
                       @if (($asset->assetstatus) && ($asset->assetstatus->deployable=='1'))
                         @if (($asset->assigned_to != '') && ($asset->deleted_at==''))
                           @can('checkin', $asset)
-                            <a href="{{ route('hardware.checkin.create', $asset->id) }}"
+                            <a href="{{ route('hardware.checkin.create', $asset->id) }}?return_to={{ urlencode($returnToReservations) }}"
                               class="btn btn-sm btn-primary"
                               style="margin-right: 5px;">
                               {{ trans('admin/hardware/general.checkin') }}
@@ -731,7 +783,7 @@
                           @endcan
                         @elseif (($asset->assigned_to == '') && ($asset->deleted_at==''))
                           @can('checkout', $asset)
-                            <a href="{{ route('hardware.checkout.create', $asset->id) }}"
+                            <a href="{{ route('hardware.checkout.create', $asset->id) }}?return_to={{ urlencode($returnToReservations) }}"
                               class="btn btn-sm bg-maroon"
                               style="margin-right: 5px;">
                               {{ trans('admin/hardware/general.checkout') }}
@@ -747,6 +799,7 @@
                               style="display:inline;">
                           @csrf
                           @method('DELETE')
+                          <input type="hidden" name="return_to" value="{{ $returnToReservations }}">
                           <button type="submit" class="btn btn-sm btn-default">
                             Cancel
                           </button>
@@ -757,7 +810,7 @@
                       @if ($currentUser && method_exists($currentUser, 'isSuperUser') && $currentUser->isSuperUser())
                         @php $activeReservationsCount = $asset->activeReservations()->count(); @endphp
                         @if ($activeReservationsCount > 0)
-                          <a href="{{ route('hardware.reserve.manage', $asset->id) }}"
+                          <a href="{{ route('hardware.reserve.manage', $asset->id) }}?return_to={{ urlencode($returnToReservations) }}"
                             class="btn btn-sm btn-default"
                             style="margin-left: 5px;">
                             Manage reservations

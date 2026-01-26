@@ -151,24 +151,19 @@ class AssetPolicy extends CheckoutablePermissionsPolicy
             $parent = Asset::find($item->assigned_to);
 
             if (! $parent) {
-                // If the parent is missing for some reason, fall back to permission
-                return $checkinPerm;
+                // If the parent is missing for some reason, anyone can checkin
+                return true;
             }
 
-            // If parent is currently checked out to a user
-            if ($parent->assigned_type === \App\Models\User::class && $parent->assigned_to) {
-                // Only that user can check in the child asset
-                if ((int) $parent->assigned_to === (int) $user->id) {
-                    return $checkinPerm;
-                }
-
-                // Other non-super users cannot check in
-                return false;
+            // Parent NOT deployed to anything -> ANY user can check in the child
+            if (empty($parent->assigned_to) || empty($parent->assigned_type)) {
+                return true;
             }
 
-            // If parent is NOT currently checked out to anyone -> anyone with permission can check in
-            if (is_null($parent->assigned_to)) {
-                return $checkinPerm;
+            // Parent deployed to a USER
+            if ($parent->assigned_type === \App\Models\User::class) {
+                // Only the user who has the parent deployed can check in the child
+                return (int) $parent->assigned_to === (int) $user->id;
             }
 
             // Parent is checked out to some other type; be conservative
