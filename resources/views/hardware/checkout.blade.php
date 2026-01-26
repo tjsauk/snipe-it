@@ -4,6 +4,9 @@
     /** @var \App\Models\User $authUser */
     $authUser = auth()->user();
     $onlySelfCheckout = $authUser && method_exists($authUser, 'mustSelfCheckout') && $authUser->mustSelfCheckout();
+    @php
+        $checkoutType = old('checkout_to_type', session('checkout_to_type') ?: 'user');
+    @endphp
 
     // Use the actual variable name used in this view:
     // if it's $item instead of $asset, swap accordingly.
@@ -174,17 +177,23 @@
                         
                         @if ($allowCheckoutToUser)
                             @if ($onlySelfCheckout)
-                                {{-- Self-checkout users: can only choose themselves --}}
-                                <div class="form-group" style="{{ (session('checkout_to_type') ?: 'user') == 'user' ? '' : 'display: none;' }}">
-                                    <label class="col-md-3 control-label">
-                                        {{ trans('general.user') }}
-                                    </label>
+                                {{-- Match the official user-select wrapper so JS toggling works --}}
+                                <div id="assigned_user"
+                                    class="form-group{{ $errors->has('assigned_user') ? ' has-error' : '' }}"
+                                    style="{{ $checkoutType == 'user' ? '' : 'display: none;' }}">
+
+                                    <label for="assigned_user" class="col-md-3 control-label">{{ trans('general.user') }}</label>
+
                                     <div class="col-md-7">
-                                        <p class="form-control-static">
+                                        <p class="form-control-static" style="padding-top: 7px;">
                                             {{ $authUser->present()->fullName ?? $authUser->name ?? $authUser->email }}
                                         </p>
+
+                                        {{-- critical: backend expects assigned_user --}}
                                         <input type="hidden" name="assigned_user" value="{{ $authUser->id }}">
                                     </div>
+
+                                    {!! $errors->first('assigned_user', '<div class="col-md-8 col-md-offset-3"><span class="alert-msg" aria-hidden="true"><i class="fas fa-times" aria-hidden="true"></i> :message</span></div>') !!}
                                 </div>
                             @else
                                 {{-- Normal users: show full user selector --}}
