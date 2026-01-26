@@ -79,6 +79,18 @@
           </li>
 
           <li>
+            <a href="#reservations" data-toggle="tab">
+              <span class="hidden-lg hidden-md" aria-hidden="true">
+                <i class="fa fa-calendar"></i>
+              </span>
+              <span class="hidden-xs hidden-sm">
+                Reservations
+                {!! (isset($reserved_assets) && $reserved_assets->count() > 0) ? '<span class="badge badge-secondary">'.number_format($reserved_assets->count()).'</span>' : '' !!}
+              </span>
+            </a>
+          </li>
+
+          <li>
             <a href="#licenses" data-toggle="tab">
             <span class="hidden-lg hidden-md">
             <i class="far fa-save fa-2x"></i>
@@ -432,6 +444,7 @@
                   data-id-table="userAssets"
                   data-side-pagination="client"
                   data-show-footer="true"
+                  data-sort-name="asset_tag"
                   data-sort-order="asc"
                   id="userAssets"
                   class="table table-striped snipe-table"
@@ -455,12 +468,14 @@
                       <th class="col-md-2" data-switchable="true" data-visible="true">
                         {{ trans('general.category') }}
                       </th>
-                      <th class="col-md-2" data-switchable="true" data-visible="true">
+                      <th class="col-md-2" data-field="asset_tag" data-sortable="true" data-switchable="true" data-visible="true">
                         {{ trans('admin/hardware/table.asset_tag') }}
                       </th>
-                      <th class="col-md-2" data-switchable="true" data-visible="false">
+
+                      <th class="col-md-2" data-field="name" data-sortable="true" data-switchable="true" data-visible="false">
                         {{ trans('general.name') }}
                       </th>
+
                       <th class="col-md-2" data-switchable="true" data-visible="false">
                         {{ trans('general.status') }}
                       </th>
@@ -470,18 +485,20 @@
                       <th class="col-md-2" data-switchable="true" data-visible="false">
                         {{ trans('general.model_no') }}
                       </th>
-                      <th class="col-md-3" data-switchable="true" data-visible="true">
+                      <th class="col-md-3" data-field="serial" data-sortable="true" data-switchable="true" data-visible="true">
                         {{ trans('admin/hardware/table.serial') }}
                       </th>
+
                       <th class="col-md-2" data-switchable="true" data-visible="false">
                         {{ trans('admin/hardware/form.default_location') }}
                       </th>
                       <th class="col-md-2" data-switchable="true" data-visible="false">
                         {{ trans('general.location') }}
                       </th>
-                      <th class="col-md-2" data-switchable="true" data-visible="true">
+                      <th class="col-md-2" data-field="expected_checkin" data-sortable="true" data-switchable="true" data-visible="true">
                         {{ trans('admin/hardware/form.expected_checkin') }}
                       </th>
+
                       @can('self.view_purchase_cost')
                         <th class="col-md-6" data-footer-formatter="sumFormatter" data-fieldname="purchase_cost">
                           {{ trans('general.purchase_cost') }}
@@ -499,6 +516,10 @@
                       @foreach ($field_array as $db_column => $field_name)
                         <th class="col-md-1" data-switchable="true" data-visible="true">{{ $field_name }}</th>
                       @endforeach
+                      <th class="col-md-2 hidden-print" data-switchable="false" data-visible="true">
+                        {{ trans('general.action') }}
+                      </th>
+
 
                     </tr>
 
@@ -523,11 +544,16 @@
                           @endif
                         </td>
                         <td>
-                          {{ $asset->asset_tag }}
+                          <a href="{{ route('hardware.show', $asset->id) }}">
+                            {{ $asset->asset_tag }}
+                          </a>
                         </td>
                         <td>
-                          {{ $asset->name }}
+                          <a href="{{ route('hardware.show', $asset->id) }}">
+                            {{ $asset->name }}
+                          </a>
                         </td>
+
                         <td>
                           <x-icon type="circle-solid" class="text-blue" />
                           {{ $asset->assetstatus->name }}
@@ -574,6 +600,58 @@
                             {{ $asset->{$db_column} }}
                           </td>
                         @endforeach
+                        <td class="hidden-print">
+                          {{-- Checkin (if user can checkin this asset) --}}
+                          @can('checkin', $asset)
+                            <a href="{{ route('hardware.checkin.create', $asset->id) }}"
+                              class="btn btn-sm btn-primary"
+                              style="margin-right: 5px;">
+                              {{ trans('admin/hardware/general.checkin') }}
+                            </a>
+                          @endcan
+
+                          {{-- Reservation actions --}}
+                          @php
+                              $currentUser = auth()->user();
+                              $userId = $currentUser ? $currentUser->id : null;
+                              $userReservation = $userId ? $asset->activeReservationForUser($selectedUserId) : null;
+                          @endphp
+
+                          {{-- Reserve --}}
+                          @if (($asset->assetstatus) && ($asset->assetstatus->deployable=='1') && ($asset->deleted_at=='') )
+                            <a href="{{ route('hardware.reserve.create', $asset->id) }}?reserve=1"
+                              class="btn btn-sm btn-warning"
+                              style="margin-right: 5px;">
+                              Reserve
+                            </a>
+                          @endif
+
+                          {{-- Cancel (normal user cancels their own reservation) --}}
+                          @if ($userReservation)
+                            <form method="POST"
+                                  action="{{ route('hardware.reserve.destroy', [$asset->id, $userReservation->id]) }}"
+                                  style="display:inline;">
+                              @csrf
+                              @method('DELETE')
+                              <button type="submit" class="btn btn-sm btn-default">
+                                Cancel
+                              </button>
+                            </form>
+                          @endif
+
+                          {{-- Superuser manage reservations --}}
+                          @if ($currentUser && method_exists($currentUser, 'isSuperUser') && $currentUser->isSuperUser())
+                            @if ($asset->activeReservations()->exists())
+                              <a href="{{ route('hardware.reserve.manage', $asset->id) }}"
+                                class="btn btn-sm btn-default"
+                                style="margin-left: 5px;">
+                                Manage reservations
+                              </a>
+                            @endif
+                          @endif
+
+                        </td>
+
 
                       </tr>
 
@@ -584,6 +662,117 @@
                     </tbody>
                   </table>
           </div><!-- /asset -->
+
+          <div class="tab-pane" id="reservations">
+            <table
+              data-cookie-id-table="userReservedAssets"
+              data-id-table="userReservedAssets"
+              data-side-pagination="client"
+              data-show-footer="true"
+              data-sort-name="asset_tag"
+              data-sort-order="asc"
+              id="userReservedAssets"
+              class="table table-striped snipe-table"
+              data-export-options='{
+                "fileName": "my-reservations-{{ date('Y-m-d') }}",
+                "ignoreColumn": ["actions","image","change","checkbox","checkincheckout","icon"]
+              }'>
+
+              <caption class="tableCaption">Reservations</caption>
+
+              <thead>
+                <tr>
+                  <th class="col-md-1">#</th>
+                  <th class="col-md-2" data-field="asset_tag" data-sortable="true">{{ trans('admin/hardware/table.asset_tag') }}</th>
+                  <th class="col-md-3" data-field="name" data-sortable="true">{{ trans('general.name') }}</th>
+                  <th class="col-md-3" data-field="model" data-sortable="true">{{ trans('admin/hardware/table.asset_model') }}</th>
+                  <th class="col-md-2 hidden-print">{{ trans('general.action') }}</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                @php $rCounter = 1; @endphp
+
+                @foreach (($reserved_assets ?? collect()) as $asset)
+                  @php
+                    $currentUser = auth()->user();
+                    $userReservation = $asset->activeReservationForUser($selectedUserId);
+                  @endphp
+
+                  <tr>
+                    <td>{{ $rCounter }}</td>
+
+                    <td>
+                      <a href="{{ route('hardware.show', $asset->id) }}">
+                        {{ $asset->asset_tag }}
+                      </a>
+                    </td>
+
+                    <td>
+                      <a href="{{ route('hardware.show', $asset->id) }}">
+                        {{ $asset->name }}
+                      </a>
+                    </td>
+
+                    <td>
+                      {!! ($asset->model) ? $asset->model->present()->formattedNameLink : '' !!}
+                    </td>
+
+                    <td class="hidden-print">
+                      {{-- Checkout / Checkin buttons (same routes you found) --}}
+                      @if (($asset->assetstatus) && ($asset->assetstatus->deployable=='1'))
+                        @if (($asset->assigned_to != '') && ($asset->deleted_at==''))
+                          @can('checkin', $asset)
+                            <a href="{{ route('hardware.checkin.create', $asset->id) }}"
+                              class="btn btn-sm btn-primary"
+                              style="margin-right: 5px;">
+                              {{ trans('admin/hardware/general.checkin') }}
+                            </a>
+                          @endcan
+                        @elseif (($asset->assigned_to == '') && ($asset->deleted_at==''))
+                          @can('checkout', $asset)
+                            <a href="{{ route('hardware.checkout.create', $asset->id) }}"
+                              class="btn btn-sm bg-maroon"
+                              style="margin-right: 5px;">
+                              {{ trans('admin/hardware/general.checkout') }}
+                            </a>
+                          @endcan
+                        @endif
+                      @endif
+
+                      {{-- Cancel reservation (normal user) --}}
+                      @if ($userReservation)
+                        <form method="POST"
+                              action="{{ route('hardware.reserve.destroy', [$asset->id, $userReservation->id]) }}"
+                              style="display:inline;">
+                          @csrf
+                          @method('DELETE')
+                          <button type="submit" class="btn btn-sm btn-default">
+                            Cancel
+                          </button>
+                        </form>
+                      @endif
+
+                      {{-- Superuser manage reservations --}}
+                      @if ($currentUser && method_exists($currentUser, 'isSuperUser') && $currentUser->isSuperUser())
+                        @php $activeReservationsCount = $asset->activeReservations()->count(); @endphp
+                        @if ($activeReservationsCount > 0)
+                          <a href="{{ route('hardware.reserve.manage', $asset->id) }}"
+                            class="btn btn-sm btn-default"
+                            style="margin-left: 5px;">
+                            Manage reservations
+                          </a>
+                        @endif
+                      @endif
+
+                    </td>
+                  </tr>
+
+                  @php $rCounter++; @endphp
+                @endforeach
+              </tbody>
+            </table>
+          </div>
 
 
           <div class="tab-pane" id="licenses">

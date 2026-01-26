@@ -127,6 +127,8 @@ class ViewAssetsController extends Controller
             'assets',
             'assets.model',
             'assets.model.fieldset.fields',
+            'assets.reservations',
+            'assets.reservations.user',
             'consumables',
             'accessories',
             'licenses'
@@ -140,13 +142,20 @@ class ViewAssetsController extends Controller
         // Process custom fields for the user being viewed
         $fieldArray = $this->extractCustomFields($userToView);
 
+        $reservedAssets = Asset::with(['model', 'model.category', 'assetstatus'])
+            ->whereHas('reservations', function ($q) use ($selectedUserId) {
+                $q->active()->where('user_id', $selectedUserId);
+            })
+            ->get();
+
         // Pass the necessary data to the view
         return view('account/view-assets', [
             'user' => $userToView, // Use 'user' for compatibility with the existing view
             'field_array' => $fieldArray,
             'settings' => $settings,
             'subordinates' => $subordinates,
-            'selectedUserId' => $selectedUserId
+            'selectedUserId' => $selectedUserId,
+            'reserved_assets' => $reservedAssets,
         ]);
     }
 
