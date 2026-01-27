@@ -938,37 +938,64 @@ document.addEventListener('DOMContentLoaded', function () {
 
     
 
-      // ---- Self-checkout safety: keep assigned_user valid when target is user ----
-      const selfAssigned = document.getElementById('self_assigned_user');
-      const isSelfOnly = {{ $onlySelfCheckout ? 'true' : 'false' }};
-      const selfUserId = {{ (int)($authUser?->id ?? 0) }};
+    // ---- Self-checkout safety: keep assigned_user valid when target is user ----
+    const form = document.querySelector('form.form-horizontal');
+    const selfAssigned = document.getElementById('self_assigned_user');
+    const isSelfOnly = {{ $onlySelfCheckout ? 'true' : 'false' }};
+    const selfUserId = {{ (int)($authUser?->id ?? 0) }};
 
+    function getCheckoutToType() {
+      const checked = document.querySelector('input[name="checkout_to_type"]:checked');
+      if (checked) return checked.value;
 
+      const sel = document.querySelector('select[name="checkout_to_type"]');
+      if (sel) return sel.value;
 
-      function syncSelfAssignedUser() {
-        if (!selfAssigned || !isSelfOnly) return;
+      const hidden = document.querySelector('input[name="checkout_to_type"][type="hidden"]');
+      if (hidden) return hidden.value;
 
-        // Always keep it enabled and populated
+      return null;
+    }
+
+    function syncSelfAssignedUser() {
+      if (!isSelfOnly || !selfAssigned) return;
+
+      // Only enforce when target is user
+      if (getCheckoutToType() === 'user') {
         selfAssigned.disabled = false;
         selfAssigned.value = String(selfUserId);
       }
+    }
 
+    // IMPORTANT: run AFTER other listeners that may disable/clear assigned_user
+    function syncSelfAssignedUserDeferred() {
+      setTimeout(syncSelfAssignedUser, 0);
+    }
 
-      // run once + whenever target changes
-      syncSelfAssignedUser();
-      // One delegated handler for checkout_to_type changes
-      document.addEventListener('change', function (e) {
-        if (!e.target) return;
+    // initial
+    syncSelfAssignedUser();
 
-        const isCheckoutToType =
-          e.target.matches('input[name="checkout_to_type"]') ||
-          e.target.matches('select[name="checkout_to_type"]');
+    // One delegated handler for checkout_to_type changes
+    document.addEventListener('change', function (e) {
+      if (!e.target) return;
 
-        if (!isCheckoutToType) return;
+      const isCheckoutToType =
+        e.target.matches('input[name="checkout_to_type"]') ||
+        e.target.matches('select[name="checkout_to_type"]');
 
-        setExpectedVisibility();
+      if (!isCheckoutToType) return;
+
+      setExpectedVisibility();
+      syncSelfAssignedUserDeferred();
+    });
+
+    // FINAL SAFETY NET: ensure assigned_user is present right before submit
+    if (form) {
+      form.addEventListener('submit', function () {
         syncSelfAssignedUser();
       });
+    }
+
 
     
 

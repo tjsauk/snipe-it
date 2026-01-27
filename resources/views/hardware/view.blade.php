@@ -220,7 +220,7 @@
                                 @if ($asset->deleted_at=='')
                                     @can('update', $asset)
                                         <div class="col-md-12 hidden-print" style="padding-top: 5px;">
-                                            <a href="{{ route('hardware.edit', $asset) }}" class="btn btn-sm btn-warning btn-social btn-block hidden-print">
+                                            <a href="{{ route('hardware.edit', [$asset, 'return_to' => url()->full()]) }}" class="btn btn-sm btn-warning btn-social btn-block hidden-print">
                                                 <x-icon type="edit" />
                                                 {{ trans('admin/hardware/general.edit') }}
                                             </a>
@@ -233,7 +233,7 @@
                                         @can('checkin', $asset)
                                             <div class="col-md-12 hidden-print" style="padding-top: 5px;">
                                                     <span class="tooltip-wrapper"{!! (!$asset->model ? ' data-tooltip="true" title="'.trans('admin/hardware/general.model_invalid_fix').'"' : '') !!}>
-                                                        <a role="button" href="{{ route('hardware.checkin.create', $asset->id) }}" class="btn btn-sm btn-primary bg-purple btn-social btn-block hidden-print{{ (!$asset->model ? ' disabled' : '') }}">
+                                                        <a role="button" href="{{ route('hardware.checkin.create', ['asset' => $asset->id, 'return_to' => url()->full()]) }}" class="btn btn-sm btn-primary bg-purple btn-social btn-block hidden-print{{ (!$asset->model ? ' disabled' : '') }}">
                                                             <x-icon type="checkin" />
                                                             {{ trans('admin/hardware/general.checkin') }}
                                                         </a>
@@ -244,7 +244,7 @@
                                         @can('checkout', $asset)
                                             <div class="col-md-12 hidden-print" style="padding-top: 5px;">
                                                     <span class="tooltip-wrapper"{!! (!$asset->model ? ' data-tooltip="true" title="'.trans('admin/hardware/general.model_invalid_fix').'"' : '') !!}>
-                                                        <a href="{{ route('hardware.checkout.create', $asset->id)  }}" class="btn btn-sm bg-maroon btn-social btn-block hidden-print{{ (!$asset->model ? ' disabled' : '') }}">
+                                                        <a href="{{ route('hardware.checkout.create',['asset' => $asset->id, 'return_to' => url()->full()])  }}" class="btn btn-sm bg-maroon btn-social btn-block hidden-print{{ (!$asset->model ? ' disabled' : '') }}">
                                                              <x-icon type="checkout" />
                                                             {{ trans('admin/hardware/general.checkout') }}
                                                     </a>
@@ -264,7 +264,7 @@
                                 @if (($asset->assetstatus) && ($asset->assetstatus->deployable=='1') && ($asset->deleted_at==''))
                                     {{-- Reserve: reuse checkout form in reservation mode --}}
                                     
-                                    <a href="{{ route('hardware.reserve.create', $asset->id) }}?reserve=1"
+                                    <a href="{{ route('hardware.reserve.create', ['asset' => $asset->id, 'reserve' => 1, 'return_to' => url()->full()]) }}"
                                     class="btn btn-sm btn-warning btn-social btn-block hidden-print{{ ((!$asset->model) ? ' disabled' : '') }}">
                                         <i class="fa fa-calendar-plus-o"></i>
                                         Reserve
@@ -287,7 +287,7 @@
 
                                     @if ($activeReservationsCount > 0)
                                         {{-- Superuser: single manage-reservations button (like checkin page) --}}
-                                        <a href="{{ route('hardware.reserve.manage', $asset->id) }}"
+                                        <a href="{{ route('hardware.reserve.manage', ['asset' => $asset->id, 'return_to' => url()->full()]) }}"
                                         class="btn btn-sm btn-default btn-social btn-block hidden-print"
                                         style="margin-top: 5px;">
                                             <i class="fa fa-calendar-times-o"></i>
