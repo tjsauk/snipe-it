@@ -177,24 +177,24 @@
                         
                         @if ($allowCheckoutToUser)
                             @if ($onlySelfCheckout)
-                                {{-- Match the official user-select wrapper so JS toggling works --}}
-                                <div id="assigned_user"
-                                    class="form-group{{ $errors->has('assigned_user') ? ' has-error' : '' }}"
-                                    style="{{ $checkoutType == 'user' ? '' : 'display: none;' }}">
+                              {{-- Always submit assigned_user, even if JS disables/hides the user block --}}
+                              <input type="hidden" name="assigned_user" id="self_assigned_user" value="{{ $authUser->id }}">
 
-                                    <label for="assigned_user" class="col-md-3 control-label">{{ trans('general.user') }}</label>
+                              {{-- Visible “assigned user” row (no inputs inside, only text) --}}
+                              <div id="assigned_user"
+                                  class="form-group{{ $errors->has('assigned_user') ? ' has-error' : '' }}"
+                                  style="{{ $checkoutType == 'user' ? '' : 'display: none;' }}">
 
-                                    <div class="col-md-7">
-                                        <p class="form-control-static" style="padding-top: 7px;">
-                                            {{ $authUser->present()->fullName ?? $authUser->name ?? $authUser->email }}
-                                        </p>
+                                  <label class="col-md-3 control-label">{{ trans('general.user') }}</label>
 
-                                        {{-- critical: backend expects assigned_user --}}
-                                        <input type="hidden" name="assigned_user" value="{{ $authUser->id }}">
-                                    </div>
+                                  <div class="col-md-7">
+                                      <p class="form-control-static" style="padding-top: 7px;">
+                                          {{ $authUser->present()->fullName ?? $authUser->name ?? $authUser->email }}
+                                      </p>
+                                  </div>
 
-                                    {!! $errors->first('assigned_user', '<div class="col-md-8 col-md-offset-3"><span class="alert-msg" aria-hidden="true"><i class="fas fa-times" aria-hidden="true"></i> :message</span></div>') !!}
-                                </div>
+                                  {!! $errors->first('assigned_user', '<div class="col-md-8 col-md-offset-3"><span class="alert-msg" aria-hidden="true"><i class="fas fa-times" aria-hidden="true"></i> :message</span></div>') !!}
+                              </div>
                             @else
                                 {{-- Normal users: show full user selector --}}
                                 @include('partials.forms.edit.user-select', [

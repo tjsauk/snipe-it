@@ -164,6 +164,16 @@ class AssetCheckoutController extends Controller
             $defaultExpectedCheckin = $end->toDateString();
             $calendarRanges = $asset->calendarBlockedRanges();
 
+            // Store where the user came from (only once)
+            if (!session()->has('return_to')) {
+                $prev = url()->previous();
+                if (!str_contains($prev, '/hardware/' . $asset->id . '/checkout')) {
+                    session()->put('return_to', $prev);
+                }
+            }
+
+
+
             return view('hardware/checkout', compact('asset'))
                 ->with('statusLabel_list', Helper::deployableStatusLabelList())
                 ->with('table_name', 'Assets')
@@ -171,7 +181,8 @@ class AssetCheckoutController extends Controller
                 ->with('calendarRanges', $calendarRanges)
                 ->with('reserve_mode', $reserveMode)
                 ->with('defaultCheckoutAt', $defaultCheckoutAt)
-                ->with('defaultExpectedCheckin', $defaultExpectedCheckin);
+                ->with('defaultExpectedCheckin', $defaultExpectedCheckin)
+                ->with('return_to', session('return_to'));
         }
 
         
@@ -198,6 +209,10 @@ class AssetCheckoutController extends Controller
             // Detect reservation mode
             $reserveMode = $request->boolean('reserve_mode')
                 || $request->routeIs('hardware.reserve.store');
+
+            // Prefer explicit posted return_to, fall back to session
+            $returnTo = $request->input('return_to') ?: session('return_to');
+
 
             // Only block availability for normal checkout
             if (! $reserveMode && ! $asset->availableForCheckout()) {
@@ -393,8 +408,14 @@ class AssetCheckoutController extends Controller
                     'status'         => 'active',
                 ]);
 
+                if ($returnTo) {
+                    session()->forget('return_to');
+                    return redirect($returnTo)->with('success', 'Reservation created successfully.');
+                }
+
                 return Helper::getRedirectOption($request, $asset->id, 'Assets')
                     ->with('success', 'Reservation created successfully.');
+
             }
 
             /***************************************************************
@@ -451,8 +472,14 @@ class AssetCheckoutController extends Controller
                     $userReservation->save();
                 }
 
+                if ($returnTo) {
+                    session()->forget('return_to');
+                    return redirect($returnTo)->with('success', trans('admin/hardware/message.checkout.success'));
+                }
+
                 return Helper::getRedirectOption($request, $asset->id, 'Assets')
                     ->with('success', trans('admin/hardware/message.checkout.success'));
+
             }
 
             return redirect()->route('hardware.checkout.create', $asset)
