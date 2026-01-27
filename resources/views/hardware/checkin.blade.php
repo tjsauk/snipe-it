@@ -41,7 +41,8 @@
                                         @endif
                                         {{csrf_field()}}
 
-                                        <input type="hidden" name="return_to" value="{{ request('return_to') }}">
+                                        <input type="hidden" name="return_to" value="{{ old('return_to', request('return_to') ?? ($return_to ?? session('return_to'))) }}">
+
                                         
                                         @if ($asset->company)
                                             <!-- accessory name -->
@@ -233,15 +234,17 @@
                 </div> <!--/.box-body-->
 
                 <x-redirect_submit_options
-                        index_route="hardware.index"
-                        :button_label="trans('general.checkin')"
-                        :disabled_select="!$asset->model"
-                        :options="[
-                                'index' => trans('admin/hardware/form.redirect_to_all', ['type' => trans('general.assets')]),
-                                'item' => trans('admin/hardware/form.redirect_to_type', ['type' => trans('general.asset')]),
-                                'target' => $target_option,
-                               ]"
+                    index_route="hardware.index"
+                    :return_to="old('return_to', request('return_to') ?? ($return_to ?? session('return_to')))"
+                    :button_label="trans('general.checkin')"
+                    :disabled_select="!$asset->model"
+                    :options="[
+                        'index' => trans('admin/hardware/form.redirect_to_all', ['type' => trans('general.assets')]),
+                        'item' => trans('admin/hardware/form.redirect_to_type', ['type' => trans('general.asset')]),
+                        'target' => $target_option,
+                    ]"
                 />
+
                 </form>
 
             </div>

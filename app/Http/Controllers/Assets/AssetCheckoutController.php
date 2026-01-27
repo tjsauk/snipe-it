@@ -213,6 +213,25 @@ class AssetCheckoutController extends Controller
             // Prefer explicit posted return_to, fall back to session
             $returnTo = $request->input('return_to') ?: session('return_to');
 
+            // Normalize checkout target + required assigned_* fields
+            $checkoutToType = $request->get('checkout_to_type', 'user');
+
+            // If user switched targets and came back, assigned_user may be missing because the input was disabled/hidden.
+            // When checkout_to_type=user and no asset/location is provided, default to current user.
+            if (
+                $checkoutToType === 'user'
+                && !$request->filled('assigned_user')
+                && !$request->filled('assigned_asset')
+                && !$request->filled('assigned_location')
+            ) {
+                $request->merge(['assigned_user' => auth()->id()]);
+            }
+
+            
+
+            // Keep session in sync with the string type (NOT the $target object)
+            session()->put('checkout_to_type', $checkoutToType);
+
 
             // Only block availability for normal checkout
             if (! $reserveMode && ! $asset->availableForCheckout()) {
@@ -220,13 +239,6 @@ class AssetCheckoutController extends Controller
                     ->with('error', trans('admin/hardware/message.checkout.not_available'));
             }
 
-            // Fallback for reservations: if checkout_to_type is missing, enforce user/self
-            if (!$request->filled('checkout_to_type')) {
-                $request->merge([
-                    'checkout_to_type' => 'user',
-                    'assigned_user'    => auth()->id(),
-                ]);
-            }
 
             // Authorize differently for reserve vs normal checkout
             if ($reserveMode) {
@@ -242,8 +254,8 @@ class AssetCheckoutController extends Controller
 
             $admin = auth()->user();
 
-            $target = $this->determineCheckoutTarget();
-            session()->put(['checkout_to_type' => $target]);
+            
+
             // Determine if this checkout is to another asset
             // In Snipe-IT, "checkout_to_type" is usually a string like: user, location, asset
             $isCheckoutToAsset = ($request->get('checkout_to_type') === 'asset');
@@ -252,6 +264,13 @@ class AssetCheckoutController extends Controller
             if ($reserveMode) {
                 $isCheckoutToAsset = false;
             }
+
+            $target = $this->determineCheckoutTarget();
+
+            if (!$target) {
+                return back()->withInput()->with('error', 'Checkout target is missing. Please select a user, asset, or location.');
+            }
+
 
             $asset = $this->updateAssetLocation($asset, $target);
 

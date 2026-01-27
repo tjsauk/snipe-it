@@ -58,11 +58,22 @@ class AssetCheckinController extends Controller
             'App\Models\Location' => trans('admin/hardware/form.redirect_to_type', ['type' => trans('general.location')]),
             default => trans('admin/hardware/form.redirect_to_type', ['type' => trans('general.user')]),
         };
+        // Store where the user came from (only once)
+        if (!session()->has('return_to')) {
+            $prev = url()->previous();
+
+            // avoid capturing the checkin page itself
+            if (!str_contains($prev, '/hardware/' . $asset->id . '/checkin')) {
+                session()->put('return_to', $prev);
+            }
+        }
+
         return view('hardware/checkin', compact('asset', 'target_option'))
             ->with('item', $asset)
             ->with('statusLabel_list', Helper::statusLabelList())
             ->with('backto', $backto)
-            ->with('table_name', 'Assets');
+            ->with('table_name', 'Assets')
+            ->with('return_to', session('return_to'));
     }
 
     /**
@@ -151,15 +162,13 @@ class AssetCheckinController extends Controller
 
         session()->put('redirect_option', $request->get('redirect_option'));
 
-        // Add any custom fields that should be included in the checkout
-        $asset->customFieldsForCheckinCheckout('display_checkin');
-
         if ($asset->save()) {
 
             event(new CheckoutableCheckedIn($asset, $target, auth()->user(), $request->input('note'), $checkin_at, $originalValues));
             $returnTo = $request->input('return_to') ?: $request->query('return_to');
 
             if ($returnTo) {
+                session()->forget('return_to');
                 return redirect()->to($returnTo)
                     ->with('success', trans('admin/hardware/message.checkin.success'));
             }

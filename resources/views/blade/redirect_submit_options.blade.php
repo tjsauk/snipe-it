@@ -9,19 +9,24 @@
 ])
 
 @php
-    // Priority:
-    // 1) explicit prop
+    // Priority (most specific -> least):
+    // 1) explicit prop passed from view
     // 2) old input (after validation errors)
-    // 3) session stored in controller
-    // 4) index route fallback
-    // 5) previous url fallback
+    // 3) session stored by controller
+    // 4) HTTP referer / previous URL
+    // 5) index route as last fallback
     $cancelUrl =
         $return_to
         ?? old('return_to')
         ?? session('return_to')
-        ?? ($index_route ? route($index_route) : null)
-        ?? url()->previous();
+        ?? url()->previous()
+        ?? ($index_route ? route($index_route) : null);
+    // avoid looping back to the same page
+    if ($cancelUrl === url()->current() && $index_route) {
+        $cancelUrl = route($index_route);
+    }
 @endphp
+
 
 <div class="box-footer">
     <div class="row">

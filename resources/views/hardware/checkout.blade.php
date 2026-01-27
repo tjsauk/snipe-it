@@ -66,7 +66,8 @@
                     </div>
                     <div class="box-body">
                         {{csrf_field()}}
-                        
+                        <input type="hidden" name="return_to" value="{{ old('return_to', $return_to ?? session('return_to')) }}">
+
                         @if ($asset->company)
                             <!-- accessory name -->
                             <div class="form-group">
@@ -200,7 +201,8 @@
                                 @include('partials.forms.edit.user-select', [
                                     'translated_name' => trans('general.user'),
                                     'fieldname'       => 'assigned_user',
-                                    'style'           => (session('checkout_to_type') ?: 'user') == 'user' ? '' : 'display: none;',
+                                    'style' => $checkoutType == 'user' ? '' : 'display: none;',
+
                                 ])
                             @endif
                         @endif
@@ -343,16 +345,17 @@
                     </div> <!--/.box-body-->
 
                     <x-redirect_submit_options
-                            index_route="hardware.index"
-                            :button_label="trans('general.checkout')"
-                            :disabled_select="!$asset->model"
-                            :options="[
-                                'index' => trans('admin/hardware/form.redirect_to_all', ['type' => trans('general.assets')]),
-                                'item' => trans('admin/hardware/form.redirect_to_type', ['type' => trans('general.asset')]),
-                                'target' => trans('admin/hardware/form.redirect_to_checked_out_to'),
-
-                               ]"
+                        index_route="hardware.index"
+                        :return_to="old('return_to', $return_to ?? session('return_to'))"
+                        :button_label="trans('general.checkout')"
+                        :disabled_select="!$asset->model"
+                        :options="[
+                            'index' => trans('admin/hardware/form.redirect_to_all', ['type' => trans('general.assets')]),
+                            'item' => trans('admin/hardware/form.redirect_to_type', ['type' => trans('general.asset')]),
+                            'target' => trans('admin/hardware/form.redirect_to_checked_out_to'),
+                        ]"
                     />
+
 
                 </form>
             </div>
@@ -931,17 +934,43 @@ document.addEventListener('DOMContentLoaded', function () {
     // Run once on load
     setExpectedVisibility();
 
-    // Event delegation: catches radio changes, select changes, dynamic DOM swaps
-    document.addEventListener('change', function(e) {
-      if (
-        e.target &&
-        (e.target.matches('input[name="checkout_to_type"]') ||
-        e.target.matches('select[name="checkout_to_type"]'))
-      ) {
-        setExpectedVisibility();
-      }
-    });
 
+
+    
+
+      // ---- Self-checkout safety: keep assigned_user valid when target is user ----
+      const selfAssigned = document.getElementById('self_assigned_user');
+      const isSelfOnly = {{ $onlySelfCheckout ? 'true' : 'false' }};
+      const selfUserId = {{ (int)($authUser?->id ?? 0) }};
+
+
+
+      function syncSelfAssignedUser() {
+        if (!selfAssigned || !isSelfOnly) return;
+
+        // Always keep it enabled and populated
+        selfAssigned.disabled = false;
+        selfAssigned.value = String(selfUserId);
+      }
+
+
+      // run once + whenever target changes
+      syncSelfAssignedUser();
+      // One delegated handler for checkout_to_type changes
+      document.addEventListener('change', function (e) {
+        if (!e.target) return;
+
+        const isCheckoutToType =
+          e.target.matches('input[name="checkout_to_type"]') ||
+          e.target.matches('select[name="checkout_to_type"]');
+
+        if (!isCheckoutToType) return;
+
+        setExpectedVisibility();
+        syncSelfAssignedUser();
+      });
+
+    
 
 
 });
