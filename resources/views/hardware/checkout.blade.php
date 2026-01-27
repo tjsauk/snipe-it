@@ -60,7 +60,7 @@
                         ? route('hardware.reserve.store', $asset->id)
                         : route('hardware.checkout.store', $asset->id);
                 @endphp
-                <form class="form-horizontal" method="post" action="{{ $storeRoute }}" autocomplete="off">
+                <form id="assetCheckoutForm" class="form-horizontal" method="post" action="{{ $storeRoute }}" autocomplete="off">
                     <div class="box-header with-border">
                         <h2 class="box-title"> {{ trans('admin/hardware/form.tag') }} {{ $asset->asset_tag }}</h2>
                     </div>
@@ -178,9 +178,8 @@
                         
                         @if ($allowCheckoutToUser)
                             @if ($onlySelfCheckout)
-                              {{-- Always submit assigned_user, even if JS disables/hides the user block --}}
+                              
                               <input type="hidden" name="assigned_user" id="self_assigned_user" value="{{ $authUser->id }}">
-
                               {{-- Visible “assigned user” row (no inputs inside, only text) --}}
                               <div id="assigned_user"
                                   class="form-group{{ $errors->has('assigned_user') ? ' has-error' : '' }}"
@@ -787,8 +786,7 @@ document.addEventListener('DOMContentLoaded', function () {
     defaultDate: startDT,
     defaultHour: startDT.getHours(),
     defaultMinute: 0,
-    onValueUpdate: function(selectedDates){ handleStartPicked(this, selectedDates); },
-    onChange: function(selectedDates){ handleStartPicked(this, selectedDates); },
+    
 
     onValueUpdate: function(selectedDates){
       if (!selectedDates.length) return;
@@ -877,10 +875,10 @@ document.addEventListener('DOMContentLoaded', function () {
     checkoutDTEl.setAttribute('readonly', 'readonly');
     // NOTE: do NOT add a class that kills pointer-events unless you want it.
   }
-    // ---------------- expected_checkin show/hide based on checkout target ----------------
+    // ---------------- expected_checkin + self-checkout depend on checkout_to_type ----------------
     const expectedGroup = document.getElementById('expected_checkin_group');
 
-    function getCheckoutToType() {
+    function rawCheckoutToType() {
       // radios
       const checked = document.querySelector('input[name="checkout_to_type"]:checked');
       if (checked) return checked.value;
@@ -889,19 +887,29 @@ document.addEventListener('DOMContentLoaded', function () {
       const sel = document.querySelector('select[name="checkout_to_type"]');
       if (sel) return sel.value;
 
-      // fallback: hidden input (some setups use this)
+      // fallback: hidden input
       const hidden = document.querySelector('input[name="checkout_to_type"][type="hidden"]');
       if (hidden) return hidden.value;
 
-      return null;
+      return '';
     }
+
+    // normalize values like: "User", "users", "Users" -> "user"
+    function checkoutToType() {
+      const t = String(rawCheckoutToType() || '').toLowerCase();
+      if (t.includes('user')) return 'user';
+      if (t.includes('asset')) return 'asset';
+      if (t.includes('location')) return 'location';
+      return t;
+    }
+
 
     function setExpectedVisibility() {
       if (!expectedGroup) return;
 
-      const t = getCheckoutToType();
+      const t = checkoutToType();
+      const shouldHide = (t === 'asset');
 
-      const shouldHide = (t === 'asset'); // <-- if your value differs, tell me what it is and I’ll adjust
 
       if (shouldHide) {
         expectedGroup.style.display = 'none';
@@ -938,63 +946,64 @@ document.addEventListener('DOMContentLoaded', function () {
 
     
 
-    // ---- Self-checkout safety: keep assigned_user valid when target is user ----
-    const form = document.querySelector('form.form-horizontal');
-    const selfAssigned = document.getElementById('self_assigned_user');
+    // ---- Self-checkout: keep hidden assigned_user correct, and submit only when type=user ----
+    const form = document.getElementById('assetCheckoutForm');
     const isSelfOnly = {{ $onlySelfCheckout ? 'true' : 'false' }};
     const selfUserId = {{ (int)($authUser?->id ?? 0) }};
 
-    function getCheckoutToType() {
-      const checked = document.querySelector('input[name="checkout_to_type"]:checked');
-      if (checked) return checked.value;
-
-      const sel = document.querySelector('select[name="checkout_to_type"]');
-      if (sel) return sel.value;
-
-      const hidden = document.querySelector('input[name="checkout_to_type"][type="hidden"]');
-      if (hidden) return hidden.value;
-
-      return null;
+    function checkoutType() {
+      return (
+        form?.querySelector('input[name="checkout_to_type"]:checked')?.value ||
+        form?.querySelector('select[name="checkout_to_type"]')?.value ||
+        form?.querySelector('input[name="checkout_to_type"][type="hidden"]')?.value ||
+        'user'
+      );
     }
 
-    function syncSelfAssignedUser() {
-      if (!isSelfOnly || !selfAssigned) return;
+    function enforceSelfCheckout() {
+      if (!form || !isSelfOnly || !selfUserId) return;
 
-      // Only enforce when target is user
-      if (getCheckoutToType() === 'user') {
-        selfAssigned.disabled = false;
-        selfAssigned.value = String(selfUserId);
+      const t = String(checkoutType()).toLowerCase();
+      const selfInput = form.querySelector('#self_assigned_user');
+
+      if (!selfInput) {
+        console.warn('self_assigned_user input missing from form');
+        return;
+      }
+
+      if (t === 'user') {
+        // MUST submit assigned_user and ensure it is not blank
+        selfInput.disabled = false;
+        selfInput.value = String(selfUserId);
+      } else {
+        // MUST NOT submit assigned_user when checking out to asset/location
+        selfInput.value = String(selfUserId); // keep safe
+        selfInput.disabled = true;            // disabled => not submitted
       }
     }
 
-    // IMPORTANT: run AFTER other listeners that may disable/clear assigned_user
-    function syncSelfAssignedUserDeferred() {
-      setTimeout(syncSelfAssignedUser, 0);
-    }
+    // Run once after everything has attached its listeners
+    setTimeout(enforceSelfCheckout, 0);
 
-    // initial
-    syncSelfAssignedUser();
-
-    // One delegated handler for checkout_to_type changes
+    // Re-run after checkout_to_type changes (deferred so we run after other handlers)
     document.addEventListener('change', function (e) {
       if (!e.target) return;
-
-      const isCheckoutToType =
+      if (
         e.target.matches('input[name="checkout_to_type"]') ||
-        e.target.matches('select[name="checkout_to_type"]');
-
-      if (!isCheckoutToType) return;
-
-      setExpectedVisibility();
-      syncSelfAssignedUserDeferred();
+        e.target.matches('select[name="checkout_to_type"]')
+      ) {
+        setTimeout(enforceSelfCheckout, 0);
+      }
     });
 
-    // FINAL SAFETY NET: ensure assigned_user is present right before submit
-    if (form) {
-      form.addEventListener('submit', function () {
-        syncSelfAssignedUser();
-      });
-    }
+    // Absolute last line of defense
+    form?.addEventListener('submit', function () {
+      enforceSelfCheckout();
+    });
+
+
+
+
 
 
     
