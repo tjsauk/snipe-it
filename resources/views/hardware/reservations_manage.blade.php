@@ -6,6 +6,10 @@
 @stop
 
 @section('content')
+    @php
+        $return_to = $return_to ?? request('return_to') ?? session('return_to') ?? route('hardware.show', $asset);
+    @endphp
+
     <div class="row">
         <div class="col-md-12">
 
@@ -53,6 +57,7 @@
                                               style="display:inline-block;">
                                             @csrf
                                             @method('DELETE')
+                                            <input type="hidden" name="return_to" value="{{ $return_to }}">
                                             <button type="submit"
                                                     class="btn btn-xs btn-danger"
                                                     onclick="return confirm('Cancel this reservation?')">
@@ -68,8 +73,8 @@
                 </div>
 
                 <div class="box-footer">
-                    <a href="{{ route('hardware.show', $asset) }}" class="btn btn-default">
-                        <i class="fa fa-arrow-left"></i> Back to Asset
+                    <a href="{{ $return_to }}" class="btn btn-default">
+                        <i class="fa fa-arrow-left"></i> Back
                     </a>
                 </div>
             </div>

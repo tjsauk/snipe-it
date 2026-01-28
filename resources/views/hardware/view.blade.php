@@ -273,21 +273,34 @@
                                 @endif
 
                                 
-                                {{-- Cancel reservation buttons --}}
+                                {{-- Reservation management / cancel buttons --}}
                                 @php
                                     $currentUser = auth()->user();
-                                    $userId = $currentUser ? $currentUser->id : null;
+                                    $userId = $currentUser?->id;
+
+                                    $isSuper = $currentUser && method_exists($currentUser, 'isSuperUser') && $currentUser->isSuperUser();
+
+                                    // Your existing helper (returns ONE active reservation for this user+asset)
                                     $userReservation = $userId ? $asset->activeReservationForUser($userId) : null;
+
+                                    // NEW: count how many active reservations THIS user has for THIS asset
+                                    $myActiveReservationCount = $userId
+                                        ? \App\Models\AssetReservation::where('asset_id', $asset->id)
+                                            ->where('status', 'active')
+                                            ->where('user_id', $userId)
+                                            ->count()
+                                        : 0;
+
+                                    // Superuser sees manage button if any reservations exist at all
+                                    $activeReservationsCount = $asset->activeReservations()->count();
+
+                                    // Use previous setup return_to
+                                    $returnTo = old('return_to', session('return_to') ?? url()->full());
                                 @endphp
 
-                                @if ($currentUser && method_exists($currentUser, 'isSuperUser') && $currentUser->isSuperUser())
-                                    @php
-                                        $activeReservationsCount = $asset->activeReservations()->count();
-                                    @endphp
-
+                                @if ($isSuper)
                                     @if ($activeReservationsCount > 0)
-                                        {{-- Superuser: single manage-reservations button (like checkin page) --}}
-                                        <a href="{{ route('hardware.reserve.manage', ['asset' => $asset->id, 'return_to' => url()->full()]) }}"
+                                        <a href="{{ route('hardware.reserve.manage', ['asset' => $asset->id, 'return_to' => $returnTo]) }}"
                                         class="btn btn-sm btn-default btn-social btn-block hidden-print"
                                         style="margin-top: 5px;">
                                             <i class="fa fa-calendar-times-o"></i>
@@ -295,20 +308,32 @@
                                         </a>
                                     @endif
 
-                                @elseif ($userReservation)
-                                    {{-- Normal user: can cancel ONLY their own reservation --}}
-                                    <form method="POST"
-                                        action="{{ route('hardware.reserve.destroy', [$asset->id, $userReservation->id]) }}"
+                                @else
+                                    {{-- Normal user: if they have 2+ reservations, show Manage --}}
+                                    @if ($myActiveReservationCount >= 2)
+                                        <a href="{{ route('hardware.reserve.manage', ['asset' => $asset->id, 'return_to' => $returnTo]) }}"
+                                        class="btn btn-sm btn-default btn-social btn-block hidden-print"
                                         style="margin-top: 5px;">
-                                        @csrf
-                                        @method('DELETE')
-                                        <button type="submit"
-                                                class="btn btn-sm btn-default btn-social btn-block hidden-print">
-                                            <i class="fa fa-times"></i>
-                                            Cancel my reservation
-                                        </button>
-                                    </form>
+                                            <i class="fa fa-calendar-times-o"></i>
+                                            Manage my reservations
+                                        </a>
+
+                                    {{-- Normal user: if they have exactly 1 reservation, keep single “cancel my reservation” button --}}
+                                    @elseif ($userReservation)
+                                        <form method="POST"
+                                            action="{{ route('hardware.reserve.destroy', [$asset->id, $userReservation->id]) }}"
+                                            style="margin-top: 5px;">
+                                            @csrf
+                                            @method('DELETE')
+                                            <input type="hidden" name="return_to" value="{{ $returnTo }}">
+                                            <button type="submit" class="btn btn-sm btn-default btn-social btn-block hidden-print">
+                                                <i class="fa fa-times"></i>
+                                                Cancel my reservation
+                                            </button>
+                                        </form>
+                                    @endif
                                 @endif
+
 
 
 

@@ -395,11 +395,11 @@ class AssetCheckoutController extends Controller
                 }
 
                 // one active reservation per user per asset
-                $existing = $asset->activeReservationForUser($reservationUserId);
-                if ($existing) {
-                    return redirect()->route('hardware.show', $asset)
-                        ->with('error', 'You already have an active reservation for this asset.');
-                }
+                //$existing = $asset->activeReservationForUser($reservationUserId);
+                //if ($existing) {
+                //    return redirect()->route('hardware.show', $asset)
+                //        ->with('error', 'You already have an active reservation for this asset.');
+                //}
 
                 // NO overlap with ongoing checkout period (hour-accurate)
                 if ($asset->overlapsOngoingCheckout($windowStartDT, $windowEndDT)) {
