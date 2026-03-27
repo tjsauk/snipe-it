@@ -590,7 +590,7 @@
                                             {{-- List reservations with user and date range --}}
                                             <ul style="margin-top: 5px; padding-left: 18px;">
                                                 @foreach($activeReservations as $res)
-                                                    <li>
+                                                    <li style="white-space: nowrap;">
                                                         {{ optional($res->user)->username
                                                             ?? optional($res->user)->email
                                                             ?? 'User #'.$res->user_id }}:

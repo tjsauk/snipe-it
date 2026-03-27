@@ -24,7 +24,8 @@
                     @if ($reservations->isEmpty())
                         <p>No active reservations for this asset.</p>
                     @else
-                        <table class="table table-striped">
+                        <div class="table-responsive">
+                        <table class="table table-striped" style="white-space: nowrap;">
                             <thead>
                             <tr>
                                 <th>User</th>
@@ -69,6 +70,7 @@
                             @endforeach
                             </tbody>
                         </table>
+                        </div>
                     @endif
                 </div>
 
