@@ -602,7 +602,7 @@ class Asset extends Depreciable
         }
 
         // Standard interval overlap (inclusive)
-        return $from <= $checkoutEnd && $until >= $checkoutStart;
+        return $from <= $checkoutEnd && $until > $checkoutStart;
     }
 
 
@@ -628,7 +628,7 @@ class Asset extends Depreciable
             $q->where('reserved_from', '<=', $until->format('Y-m-d H:i:s'))
             ->where(function ($q2) use ($from) {
                 $q2->whereNull('reserved_until')
-                    ->orWhere('reserved_until', '>=', $from->format('Y-m-d H:i:s'));
+                    ->orWhere('reserved_until', '>', $from->format('Y-m-d H:i:s'));
             });
         })->exists();
     }
