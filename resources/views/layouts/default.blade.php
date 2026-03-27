@@ -1897,9 +1897,11 @@
             /**
              * 5. Add an event listener to toggle the reset
              */
-            clearButton.addEventListener("click", (event) => {
-                localStorage.removeItem("theme");
-            });
+            if (clearButton) {
+                clearButton.addEventListener("click", (event) => {
+                    localStorage.removeItem("theme");
+                });
+            }
 
 
 

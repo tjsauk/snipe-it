@@ -724,6 +724,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
     syncingStart = false;
   }
+
+  const weekStart = {{ (int)($snipeSettings->week_start ?? 0) }};
+  const fpLocale = {
+    firstDayOfWeek: weekStart
+  };
+
   // ---------------- init pickers ----------------
   const expectedPicker = flatpickr(expectedDTEl, {
     enableTime: true,
@@ -732,7 +738,7 @@ document.addEventListener('DOMContentLoaded', function () {
     dateFormat: "Y-m-d H:i",
     allowInput: false,
     clickOpens: true,
-
+    locale:     fpLocale,
     disable: [disableEndDay],
     defaultDate: endDT,
     defaultHour: endDT.getHours(),
@@ -781,7 +787,7 @@ document.addEventListener('DOMContentLoaded', function () {
     dateFormat: "Y-m-d H:i",
     allowInput: false,
     clickOpens: reserveMode,
-
+    locale:     fpLocale,
     disable: reserveMode ? [disableStartDay] : [],
     defaultDate: startDT,
     defaultHour: startDT.getHours(),
@@ -1016,7 +1022,3 @@ document.addEventListener('DOMContentLoaded', function () {
 
 
 @stop
-
-
-
-
