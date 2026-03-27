@@ -20,7 +20,15 @@ class ReportsController extends Controller
      */
     public function index(Request $request) : JsonResponse | array
     {
-        $this->authorize('activity.view');
+        $user = auth()->user();
+        $canViewAll = $user->can('activity.view');
+        $canViewSpecificAsset = $user->hasAccess('assets.view')
+            && $request->filled('item_id')
+            && $request->filled('item_type');
+
+        if (!$canViewAll && !$canViewSpecificAsset) {
+            $this->authorize('activity.view');
+        }
 
         $actionlogs = Actionlog::with('item', 'user', 'adminuser', 'target', 'location');
 
