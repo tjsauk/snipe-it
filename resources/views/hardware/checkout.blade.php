@@ -536,6 +536,16 @@ document.addEventListener('DOMContentLoaded', function () {
     return snapToHour(dt);
   }
 
+  function lastOpenHourBefore(dt, maxScanHours = 24*60){
+    let x = snapToHour(dt);
+    for (let i=0; i<maxScanHours; i++){
+      x = addHours(x, -1);
+      if (x < minReservationStart) return new Date(minReservationStart.getTime());
+      if (!isDTBlocked(x)) return x;
+    }
+    return snapToHour(dt);
+  }
+
   function firstValidHourOnDay(dayDate, minDT, maxDT){
     const day0 = startOfDay(dayDate);
     for (let h=0; h<24; h++){
@@ -638,9 +648,14 @@ document.addEventListener('DOMContentLoaded', function () {
       return firstOpenHourFrom(chosen);
     }
 
-    // If the chosen hour is blocked (e.g. user arrowed into 16:00),
-    // jump FORWARD to the next open hour so user can reach 19:00 etc.
+    // If the chosen hour is blocked, jump to the nearest open hour.
+    // If the user went backward in time (e.g. clicked hour arrow down), jump BACKWARD
+    // so they can reach times before the block without getting stuck.
+    // Otherwise jump FORWARD (e.g. user arrowed up into a block).
     if (isDTBlocked(chosen)) {
+      if (before && chosen < before) {
+        return lastOpenHourBefore(chosen);
+      }
       return firstOpenHourFrom(chosen);
     }
 

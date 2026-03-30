@@ -625,7 +625,7 @@ class Asset extends Depreciable
         // Overlap test:
         // reserved_from <= until AND (reserved_until is null OR reserved_until >= from)
         return $query->where(function ($q) use ($from, $until) {
-            $q->where('reserved_from', '<=', $until->format('Y-m-d H:i:s'))
+            $q->where('reserved_from', '<', $until->format('Y-m-d H:i:s'))
             ->where(function ($q2) use ($from) {
                 $q2->whereNull('reserved_until')
                     ->orWhere('reserved_until', '>', $from->format('Y-m-d H:i:s'));
