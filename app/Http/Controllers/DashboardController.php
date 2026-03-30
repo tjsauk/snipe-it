@@ -43,7 +43,9 @@ class DashboardController extends Controller
                 Artisan::call('passport:install', ['--no-interaction' => true]);
             }
 
-            return view('dashboard')->with('asset_stats', $asset_stats)->with('counts', $counts);
+            $quicklink_categories = \App\Models\Category::whereIn('name', ['Equipment', 'Facilities'])->get()->keyBy('name');
+
+            return view('dashboard')->with('asset_stats', $asset_stats)->with('counts', $counts)->with('quicklink_categories', $quicklink_categories);
         } else {
             Session::reflash();
 

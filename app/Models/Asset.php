@@ -555,7 +555,25 @@ class Asset extends Depreciable
     /** Active reservations for this asset (any user). */
     public function activeReservations()
     {
-        return $this->reservations()->active()->orderBy('reserved_from');
+        $now = Carbon::now();
+        return $this->reservations()
+            ->where(function ($q) use ($now) {
+                // status=active: show if window hasn't ended yet
+                $q->where('status', 'active')
+                  ->where(function ($q2) use ($now) {
+                      $q2->where('reserved_until', '>', $now)
+                         ->orWhere(function ($q3) use ($now) {
+                             $q3->whereNull('reserved_until')
+                                ->where('reserved_from', '>=', $now);
+                         });
+                  });
+            })
+            ->orWhere(function ($q) use ($now) {
+                // status=fulfilled (auto-checked-out): show until window ends
+                $q->where('status', 'fulfilled')
+                  ->where('reserved_until', '>', $now);
+            })
+            ->orderBy('reserved_from');
     }
 
     /** Active reservation for a specific user (there should be at most one). */
@@ -616,7 +634,7 @@ class Asset extends Depreciable
         $from  = Carbon::parse($from);
         $until = Carbon::parse($until);
 
-        $query = $this->activeReservations();
+        $query = $this->reservations()->where('status', 'active');
 
         if ($excludeUserId !== null) {
             $query->where('user_id', '!=', $excludeUserId);
@@ -783,12 +801,9 @@ class Asset extends Depreciable
         );
 
         if ($success) {
-            // Mark fulfilled and remove it so it no longer shows as an active reservation
+            // Mark fulfilled; keep the record so it stays visible until reserved_until passes
             $reservation->status = 'fulfilled';
             $reservation->save();
-
-            // You have soft deletes in the table (deleted_at), so delete() is safe
-            $reservation->delete();
         }
     }
 
@@ -1927,6 +1942,9 @@ class Asset extends Depreciable
             ->whereBetween('assets.expected_checkin', [$today->format('Y-m-d'), $interval_date])
             ->where('assets.archived', '=', 0)
             ->whereNotNull('assets.assigned_to')
+            ->whereHas('model', function ($q) {
+                $q->where('auto_checkin', '!=', 1);
+            })
             ->NotArchived();
     }
 
@@ -1943,6 +1961,9 @@ class Asset extends Depreciable
             ->where('assets.expected_checkin', '<', Carbon::now()->format('Y-m-d'))
             ->where('assets.archived', '=', 0)
             ->whereNotNull('assets.assigned_to')
+            ->whereHas('model', function ($q) {
+                $q->where('auto_checkin', '!=', 1);
+            })
             ->NotArchived();
     }
 

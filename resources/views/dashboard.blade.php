@@ -145,6 +145,68 @@
     </div><!-- ./col -->
 
 </div>
+
+<div class="row">
+
+    <div class="col-lg-2 col-xs-6">
+        <a href="{{ route('categories.index') }}">
+            <div class="dashboard small-box bg-green">
+                <div class="inner">
+                    <h3>&nbsp;</h3>
+                    <p>{{ trans('general.categories') }}</p>
+                </div>
+                <div class="icon" aria-hidden="true">
+                    <x-icon type="categories" />
+                </div>
+                <span class="small-box-footer">
+                    {{ trans('general.view_all') }}
+                    <x-icon type="arrow-circle-right" />
+                </span>
+            </div>
+        </a>
+    </div><!-- ./col -->
+
+    @if(isset($quicklink_categories['Equipment']))
+    <div class="col-lg-2 col-xs-6">
+        <a href="{{ route('categories.show', $quicklink_categories['Equipment']->id) }}">
+            <div class="dashboard small-box bg-navy">
+                <div class="inner">
+                    <h3>{{ number_format($quicklink_categories['Equipment']->assets()->count()) }}</h3>
+                    <p>Equipment</p>
+                </div>
+                <div class="icon" aria-hidden="true">
+                    <x-icon type="assets" />
+                </div>
+                <span class="small-box-footer">
+                    {{ trans('general.view_all') }}
+                    <x-icon type="arrow-circle-right" />
+                </span>
+            </div>
+        </a>
+    </div><!-- ./col -->
+    @endif
+
+    @if(isset($quicklink_categories['Facilities']))
+    <div class="col-lg-2 col-xs-6">
+        <a href="{{ route('categories.show', $quicklink_categories['Facilities']->id) }}">
+            <div class="dashboard small-box bg-olive">
+                <div class="inner">
+                    <h3>{{ number_format($quicklink_categories['Facilities']->assets()->count()) }}</h3>
+                    <p>Facilities</p>
+                </div>
+                <div class="icon" aria-hidden="true">
+                    <x-icon type="assets" />
+                </div>
+                <span class="small-box-footer">
+                    {{ trans('general.view_all') }}
+                    <x-icon type="arrow-circle-right" />
+                </span>
+            </div>
+        </a>
+    </div><!-- ./col -->
+    @endif
+
+</div>
 </div>
 
 @if ($counts['grand_total'] == 0)

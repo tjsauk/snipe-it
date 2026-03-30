@@ -201,6 +201,9 @@ class IconHelper
                 return 'fa-solid fa-lightbulb';
             case 'highlight':
                 return 'fa-solid fa-highlighter';
+            case 'categories':
+            case 'category':
+                return 'fa-solid fa-layer-group';
         }
     }
 }
