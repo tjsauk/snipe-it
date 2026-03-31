@@ -559,19 +559,21 @@ class Asset extends Depreciable
         return $this->reservations()
             ->where(function ($q) use ($now) {
                 // status=active: show if window hasn't ended yet
-                $q->where('status', 'active')
-                  ->where(function ($q2) use ($now) {
-                      $q2->where('reserved_until', '>', $now)
-                         ->orWhere(function ($q3) use ($now) {
-                             $q3->whereNull('reserved_until')
-                                ->where('reserved_from', '>=', $now);
-                         });
-                  });
-            })
-            ->orWhere(function ($q) use ($now) {
+                $q->where(function ($q2) use ($now) {
+                    $q2->where('status', 'active')
+                       ->where(function ($q3) use ($now) {
+                           $q3->where('reserved_until', '>', $now)
+                              ->orWhere(function ($q4) use ($now) {
+                                  $q4->whereNull('reserved_until')
+                                     ->where('reserved_from', '>=', $now);
+                              });
+                       });
+                })
                 // status=fulfilled (auto-checked-out): show until window ends
-                $q->where('status', 'fulfilled')
-                  ->where('reserved_until', '>', $now);
+                ->orWhere(function ($q2) use ($now) {
+                    $q2->where('status', 'fulfilled')
+                       ->where('reserved_until', '>', $now);
+                });
             })
             ->orderBy('reserved_from');
     }
