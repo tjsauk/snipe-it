@@ -70,10 +70,10 @@ class DepreciationReportTransformer
             $monthly_depreciation = Helper::formatCurrencyOutput(($asset->model->eol > 0 ? ($asset->purchase_cost / $asset->model->eol) : 0));
         }
 
-        if ($asset->assigned) {
-            $checkout_target = $asset->assigned->name;
+        if ($asset->assignedTo) {
+            $checkout_target = $asset->assignedTo->name;
             if ($asset->checkedOutToUser()) {
-                $checkout_target = $asset->assigned->getFullNameAttribute();
+                $checkout_target = $asset->assignedTo->getFullNameAttribute();
             } 
 
         }

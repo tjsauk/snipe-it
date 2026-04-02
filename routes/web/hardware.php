@@ -111,12 +111,10 @@ Route::group(
             [AssetsController::class, 'getLabel']
         )->name('label/hardware');
 
-        Route::get('{asset}/checkout', [AssetCheckoutController::class, 'create'])
-            ->name('hardware.checkout.create')
-            ->breadcrumbs(fn (Trail $trail, Asset $asset) =>
-            $trail->parent('hardware.show', $asset)
-                ->push(trans('admin/hardware/general.checkout'), route('hardware.index'))
-            );
+        // /checkout GET redirects to /reserve (checkout is now unified with reserve)
+        Route::get('{asset}/checkout', function (\App\Models\Asset $asset) {
+            return redirect()->route('hardware.reserve.create', ['asset' => $asset->id, 'reserve' => 1]);
+        })->name('hardware.checkout.create');
 
         Route::post('{assetId}/checkout',
             [AssetCheckoutController::class, 'store']

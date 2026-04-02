@@ -142,19 +142,35 @@ class ViewAssetsController extends Controller
         // Process custom fields for the user being viewed
         $fieldArray = $this->extractCustomFields($userToView);
 
+        $now = \Carbon\Carbon::now();
+
+        // Active now: reservation window has started but not yet ended
+        $activeNowAssets = Asset::with(['model', 'model.category', 'assetstatus'])
+            ->whereHas('reservations', function ($q) use ($selectedUserId, $now) {
+                $q->active()
+                  ->where('user_id', $selectedUserId)
+                  ->where('reserved_from', '<=', $now)
+                  ->where('reserved_until', '>', $now);
+            })
+            ->get();
+
+        // Future: reservation hasn't started yet
         $reservedAssets = Asset::with(['model', 'model.category', 'assetstatus'])
-            ->whereHas('reservations', function ($q) use ($selectedUserId) {
-                $q->active()->where('user_id', $selectedUserId);
+            ->whereHas('reservations', function ($q) use ($selectedUserId, $now) {
+                $q->active()
+                  ->where('user_id', $selectedUserId)
+                  ->where('reserved_from', '>', $now);
             })
             ->get();
 
         // Pass the necessary data to the view
         return view('account/view-assets', [
-            'user' => $userToView, // Use 'user' for compatibility with the existing view
+            'user' => $userToView,
             'field_array' => $fieldArray,
             'settings' => $settings,
             'subordinates' => $subordinates,
             'selectedUserId' => $selectedUserId,
+            'active_now_assets' => $activeNowAssets,
             'reserved_assets' => $reservedAssets,
         ]);
     }

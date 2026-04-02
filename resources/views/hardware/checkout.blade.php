@@ -29,6 +29,12 @@
 
 @php
     $isReserve = !empty($reserve_mode) && $reserve_mode;
+    
+    // For reservations, allow checkout to asset and location regardless of category/model settings
+    if ($isReserve) {
+        $allowCheckoutToAsset = true;
+        $allowCheckoutToLocation = true;
+    }
 @endphp
 
 
@@ -55,18 +61,32 @@
         <div class="col-md-7">
             <div class="box box-default">
                 @php
-                    $isReserve  = !empty($reserve_mode) && $reserve_mode;
-                    $storeRoute = $isReserve
-                        ? route('hardware.reserve.store', $asset->id)
-                        : route('hardware.checkout.store', $asset->id);
+                    $storeRoute = route('hardware.reserve.store', $asset->id);
                 @endphp
                 <form id="assetCheckoutForm" class="form-horizontal" method="post" action="{{ $storeRoute }}" autocomplete="off">
-                    <div class="box-header with-border">
+                    {{csrf_field()}}
+                    <input type="hidden" name="return_to" value="{{ old('return_to', $return_to ?? session('return_to')) }}">
+                    {{-- Hidden date fields - populated by calendar onConfirm --}}
+                    <input type="hidden" id="checkout_at" name="checkout_at" value="{{ old('checkout_at') }}">
+                    <input type="hidden" id="checkout_hour" name="checkout_hour" value="{{ old('checkout_hour') }}">
+                    <input type="hidden" id="expected_checkin" name="expected_checkin" value="{{ old('expected_checkin') }}">
+                    <input type="hidden" id="expected_checkin_hour" name="expected_checkin_hour" value="{{ old('expected_checkin_hour') }}">
+                    <input type="hidden" id="periods_json" name="periods_json" value="">
+
+                    <div class="nav-tabs-custom" style="margin-bottom: 0;">
+                        <ul class="nav nav-tabs">
+                            <li class="active"><a href="#reserve-details" data-toggle="tab">Details</a></li>
+                            <li id="calendar-tab-li"><a href="#reserve-calendar" data-toggle="tab"><i class="fa fa-calendar"></i> Select dates</a></li>
+                        </ul>
+                        <div class="tab-content">
+
+                        {{-- TAB 1: Details --}}
+                        <div class="tab-pane active" id="reserve-details">
+                    <div class="box-header with-border" style="border-top: none;">
                         <h2 class="box-title"> {{ trans('admin/hardware/form.tag') }} {{ $asset->asset_tag }}</h2>
                     </div>
                     <div class="box-body">
-                        {{csrf_field()}}
-                        <input type="hidden" name="return_to" value="{{ old('return_to', $return_to ?? session('return_to')) }}">
+
 
                         @if ($asset->company)
                             <!-- accessory name -->
@@ -216,83 +236,8 @@
 
 
 
-                        <!-- Checkout Date + Time -->
-                        <div class="form-group {{ $errors->has('checkout_at') ? 'error' : '' }}">
-                            <label for="checkout_at_dt" class="col-md-3 control-label">
-                                {{ trans('admin/hardware/form.checkout_date') }}
-                            </label>
-
-                            <div class="col-md-8">
-                                <input
-                                    type="text"
-                                    id="checkout_at_dt"
-                                    class="form-control col-md-7"
-                                    value=""
-                                    {{ (!empty($reserve_mode) && $reserve_mode) ? '' : 'readonly' }}
-                                >
-                                <p class="help-block" style="margin:6px 0 0;">
-                                  Select the start hour. Example: <strong>13:00</strong> means usage starts <strong>13:00–13:59</strong>.
-                                </p>
-
-
-                                {{-- Submitted values (ONLY ONCE) --}}
-                                <input
-                                    type="hidden"
-                                    id="checkout_at"
-                                    name="checkout_at"
-                                    value="{{ old('checkout_at', $defaultCheckoutAt) }}"
-                                >
-                                <input
-                                    type="hidden"
-                                    id="checkout_hour"
-                                    name="checkout_hour"
-                                    value="{{ old('checkout_hour', '') }}"
-                                >
-
-                                {!! $errors->first('checkout_at', '<span class="alert-msg" aria-hidden="true"><i class="fas fa-times" aria-hidden="true"></i> :message</span>') !!}
-                            </div>
-                        </div>
-
-                        <!-- Expected Checkin Date + Time -->
-                        <div id="expected_checkin_group" class="form-group {{ $errors->has('expected_checkin') ? 'error' : '' }}">
-
-                            <label for="expected_checkin_dt" class="col-md-3 control-label">
-                                {{ trans('admin/hardware/form.expected_checkin') }}
-                            </label>
-
-                            <div class="col-md-8">
-                                <input
-                                    type="text"
-                                    id="expected_checkin_dt"
-                                    class="form-control col-md-7"
-                                    value=""
-                                >
-                                <p class="help-block" style="margin:6px 0 0;">
-                                  Select the <strong>last used hour</strong>. Example: end <strong>13:00</strong> means the item is used until <strong>13:59</strong> and becomes available at <strong>14:00</strong>.
-                                </p>
-
-
-                                {{-- Submitted values (ONLY ONCE) --}}
-                                <input
-                                    type="hidden"
-                                    id="expected_checkin"
-                                    name="expected_checkin"
-                                    value="{{ old('expected_checkin', $defaultExpectedCheckin) }}"
-                                >
-                                <input
-                                    type="hidden"
-                                    id="expected_checkin_hour"
-                                    name="expected_checkin_hour"
-                                    value="{{ old('expected_checkin_hour', '') }}"
-                                >
-
-                                {!! $errors->first('expected_checkin', '<span class="alert-msg" aria-hidden="true"><i class="fas fa-times" aria-hidden="true"></i> :message</span>') !!}
-                            </div>
-                        </div>
-
-
-
-                        <input type="hidden" name="reserve_mode" value="{{ !empty($reserve_mode) && $reserve_mode ? 1 : 0 }}">
+                        {!! $errors->first('checkout_at', '<span class="alert-msg" aria-hidden="true"><i class="fas fa-times" aria-hidden="true"></i> :message</span>') !!}
+                        {!! $errors->first('expected_checkin', '<span class="alert-msg" aria-hidden="true"><i class="fas fa-times" aria-hidden="true"></i> :message</span>') !!}
 
                         <!-- Note -->
                         <div class="form-group {{ $errors->has('note') ? 'error' : '' }}">
@@ -343,18 +288,31 @@
 
                     </div> <!--/.box-body-->
 
-                    <x-redirect_submit_options
-                        index_route="hardware.index"
-                        :return_to="old('return_to', $return_to ?? session('return_to'))"
-                        :button_label="trans('general.checkout')"
-                        :disabled_select="!$asset->model"
-                        :options="[
-                            'index' => trans('admin/hardware/form.redirect_to_all', ['type' => trans('general.assets')]),
-                            'item' => trans('admin/hardware/form.redirect_to_type', ['type' => trans('general.asset')]),
-                            'target' => trans('admin/hardware/form.redirect_to_checked_out_to'),
-                        ]"
-                    />
+                    <div class="box-footer">
+                        {{-- Shown when checkout_to_type = asset (no dates needed) --}}
+                        <button id="btn-submit-asset" type="submit"
+                            class="btn btn-warning{{ (!$asset->model ? ' disabled' : '') }}"
+                            style="display:none;">
+                            <i class="fa fa-check"></i> {{ trans('general.checkout') }}
+                        </button>
+                        {{-- Shown for user/location (needs calendar) --}}
+                        <a id="btn-open-calendar" href="#reserve-calendar" data-toggle="tab"
+                            class="btn btn-warning{{ (!$asset->model ? ' disabled' : '') }}">
+                            <i class="fa fa-calendar"></i> {{ trans('general.checkout') }}
+                        </a>
+                    </div>
 
+                    </div>{{-- /.tab-pane#reserve-details --}}
+
+                    {{-- TAB 2: Calendar (hidden for checkout-to-asset) --}}
+                    <div class="tab-pane" id="reserve-calendar">
+                        <div style="padding: 15px;">
+                            <div id="asset-calendar-root"></div>
+                        </div>
+                    </div>{{-- /.tab-pane#reserve-calendar --}}
+
+                        </div>{{-- /.tab-content --}}
+                    </div>{{-- /.nav-tabs-custom --}}
 
                 </form>
             </div>
@@ -378,662 +336,166 @@
 @section('moar_scripts')
     @include('partials/assets-assigned')
 
-    <style>
-        /* Visualize blocked periods */
-        .flatpickr-day.checkout-blocked {
-            background: rgba(255, 0, 0, 0.25);
-            color: #000;
-        }
-
-        .flatpickr-day.reservation-blocked {
-            background: rgba(255, 165, 0, 0.25);
-            color: #000;
-        }
-
-        /* Mark the last valid selectable end-date (day before next block starts) */
-        .flatpickr-day.last-available-day {
-            border: 2px solid #000;
-        }
-    </style>
+    @php
+    $calendarExistingPeriods = collect($calendarRanges ?? [])->map(function($r) {
+        return [
+            'start'    => \Carbon\Carbon::parse($r['from'])->format('Y-m-d H:i'),
+            'end'      => $r['to'] ? \Carbon\Carbon::parse($r['to'])->format('Y-m-d H:i') : null,
+            'userName' => (string)($r['type'] ?? 'blocked'),
+        ];
+    })->values()->toArray();
+    @endphp
 
     <script>
-document.addEventListener('DOMContentLoaded', function () {
-  if (typeof flatpickr === 'undefined') return;
-
-  const reserveMode = {{ !empty($reserve_mode) && $reserve_mode ? 'true' : 'false' }};
-  const rangesRaw = @json($calendarRanges ?? []);
-
-  const checkoutDTEl  = document.getElementById('checkout_at_dt');
-  const expectedDTEl  = document.getElementById('expected_checkin_dt');
-
-  const checkoutDateHidden = document.getElementById('checkout_at');
-  const expectedDateHidden = document.getElementById('expected_checkin');
-
-  const checkoutHourHidden = document.getElementById('checkout_hour');
-  const expectedHourHidden = document.getElementById('expected_checkin_hour');
-  
-  if (!checkoutDTEl || !expectedDTEl || !checkoutDateHidden || !expectedDateHidden || !checkoutHourHidden || !expectedHourHidden) return;
-
-  // Make sure the inputs can open flatpickr (themes sometimes kill pointer events)
-  expectedDTEl.removeAttribute('disabled');
-  expectedDTEl.removeAttribute('readonly');
-  expectedDTEl.classList.remove('disabled');
-  expectedDTEl.style.pointerEvents = 'auto';
-  expectedDTEl.style.cursor = 'pointer';
-
-  if (reserveMode) {
-    checkoutDTEl.removeAttribute('disabled');
-    checkoutDTEl.removeAttribute('readonly');
-    checkoutDTEl.classList.remove('disabled');
-    checkoutDTEl.style.pointerEvents = 'auto';
-    checkoutDTEl.style.cursor = 'pointer';
-  }
-
-  // ---------------- helpers ----------------
-  const now = new Date();
-
-  function pad2(n){ return String(n).padStart(2,'0'); }
-  function snapToHour(d){
-    const x = new Date(d.getTime());
-    x.setMinutes(0,0,0);
-    return x;
-  }
-  function addHours(d, h){
-    const x = new Date(d.getTime());
-    x.setHours(x.getHours() + h);
-    return x;
-  }
-  function startOfDay(d){
-    return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0,0,0,0);
-  }
-  function formatDateOnly(d){
-    return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
-  }
-  function roundUpToNextHour(d){
-    const x = new Date(d.getTime());
-    if (x.getMinutes() !== 0 || x.getSeconds() !== 0 || x.getMilliseconds() !== 0) {
-      x.setHours(x.getHours() + 1);
-    }
-    x.setMinutes(0,0,0);
-    return x;
-  }
-  function parseDT(str) {
-    if (!str) return null;
-    return flatpickr.parseDate(str, str.length >= 19 ? "Y-m-d H:i:S" : "Y-m-d H:i");
-  }
-  function writeHiddenFromDT(dt, dateHiddenEl, hourHiddenEl) {
-    dt = snapToHour(dt);
-    dateHiddenEl.value = formatDateOnly(dt);
-    hourHiddenEl.value = String(dt.getHours());
-  }
-  function composeFromHidden(dateHiddenEl, hourHiddenEl, fallbackDT) {
-    const iso = dateHiddenEl.value;
-    const hRaw = hourHiddenEl.value;
-    const h = (hRaw !== '' && !isNaN(parseInt(hRaw,10))) ? parseInt(hRaw,10) : fallbackDT.getHours();
-
-    if (!iso) return snapToHour(fallbackDT);
-    const base = flatpickr.parseDate(iso, "Y-m-d");
-    if (!base) return snapToHour(fallbackDT);
-    base.setHours(h,0,0,0);
-    return base;
-  }
-
-  // ---------------- normalize blocked ranges to hour-starts ----------------
-  // blocked interval convention: [from, to + 1h) blocks the hour-starts from..to inclusive
-  const ranges = (rangesRaw || [])
-    .map(r => ({
-      from: parseDT(r.from),
-      to:   parseDT(r.to || r.from),
-      type: r.type || 'reservation'
-    }))
-    .filter(r => r.from && r.to)
-    .map(r => {
-      if (r.to < r.from) { const t = r.from; r.from = r.to; r.to = t; }
-      r.from = snapToHour(r.from);
-      r.to   = snapToHour(r.to);
-      return r;
-    });
-
-  function isDTBlocked(dt){
-    const h = snapToHour(dt);
-    return ranges.some(r => {
-      const toExclusive = addHours(r.to, 1);
-      return h >= r.from && h < toExclusive;
-    });
-  }
-
-  function nextBlockedStart(afterDT){
-    const probe = snapToHour(afterDT);
-    let best = null;
-    for (const r of ranges){
-      const toExclusive = addHours(r.to, 1);
-
-      // inside a block -> next blocked "start" is this block's start
-      if (probe >= r.from && probe < toExclusive) return new Date(r.from.getTime());
-
-      // otherwise, next block that starts after probe
-      if (r.from >= probe) {
-        if (!best || r.from < best) best = r.from;
-      }
-    }
-    return best ? new Date(best.getTime()) : null;
-  }
-
-  // User chooses END as "last occupied hour start".
-  // If next block starts at 10:00, last selectable end is 09:00.
-  function maxAllowedEnd(startDT){
-    const next = nextBlockedStart(startDT);
-    if (!next) return null;
-    return snapToHour(addHours(next, -1));
-  }
-
-  function firstOpenHourFrom(dt, maxScanHours = 24*60){
-    let x = snapToHour(dt);
-    for (let i=0; i<maxScanHours; i++){
-      if (!isDTBlocked(x)) return x;
-      x = addHours(x, 1);
-    }
-    return snapToHour(dt);
-  }
-
-  function lastOpenHourBefore(dt, maxScanHours = 24*60){
-    let x = snapToHour(dt);
-    for (let i=0; i<maxScanHours; i++){
-      x = addHours(x, -1);
-      if (x < minReservationStart) return new Date(minReservationStart.getTime());
-      if (!isDTBlocked(x)) return x;
-    }
-    return snapToHour(dt);
-  }
-
-  function firstValidHourOnDay(dayDate, minDT, maxDT){
-    const day0 = startOfDay(dayDate);
-    for (let h=0; h<24; h++){
-      const dt = new Date(day0.getFullYear(), day0.getMonth(), day0.getDate(), h,0,0,0);
-      if (minDT && dt < minDT) continue;
-      if (maxDT && dt > maxDT) continue;
-      if (!isDTBlocked(dt)) return dt;
-    }
-    return null;
-  }
-
-  function lastValidHourOnDay(dayDate, minDT, maxDT){
-    const day0 = startOfDay(dayDate);
-    for (let h=23; h>=0; h--){
-      const dt = new Date(day0.getFullYear(), day0.getMonth(), day0.getDate(), h,0,0,0);
-      if (minDT && dt < minDT) continue;
-      if (maxDT && dt > maxDT) continue;
-      if (!isDTBlocked(dt)) return dt;
-    }
-    return null;
-  }
-
-  // ---------------- default rules ----------------
-  function defaultCheckoutStart(){
-    return new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0,0,0);
-  }
-
-  // Your requested default: tomorrow at current hour
-  // (but still allow selecting today >= next full hour)
-  function defaultReservationStart(){
-    const tomorrowSameHour = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, now.getHours(), 0,0,0);
-    return firstOpenHourFrom(tomorrowSameHour);
-  }
-
-  function chooseDefaultEnd(startDT){
-    const plus2w = snapToHour(addHours(startDT, 24*14));
-    const nextStart = nextBlockedStart(startDT);
-    if (nextStart && nextStart <= plus2w) {
-      const end = snapToHour(addHours(nextStart, -1));
-      return end < startDT ? new Date(startDT.getTime()) : end;
-    }
-    return plus2w;
-  }
-
-  // Reservation earliest selectable moment = next full hour (today allowed)
-  const minReservationStart = roundUpToNextHour(now);
-
-  // ---------------- day disable (calendar cells) ----------------
-  // Disable a day only if it has no valid hour in the allowed window.
-  function disableStartDay(dayDate){
-    if (!reserveMode) return false;
-    // block past days entirely
-    if (startOfDay(dayDate) < startOfDay(minReservationStart)) return true;
-    return firstValidHourOnDay(dayDate, minReservationStart, null) === null;
-  }
-
-  function disableEndDay(dayDate){
-    const minEnd = startDT;
-    const maxEnd = maxAllowedEnd(startDT);
-    return lastValidHourOnDay(dayDate, minEnd, maxEnd) === null;
-  }
-
-  // ---------------- snapping logic ----------------
-  // Preserve previous hour when user clicks a day (flatpickr often gives 00:00).
-  function preserveHourIfDayClick(chosen, prev){
-    if (!prev) return chosen;
-    const c = new Date(chosen.getTime());
-    const dayChanged =
-      c.getFullYear() !== prev.getFullYear() ||
-      c.getMonth() !== prev.getMonth() ||
-      c.getDate() !== prev.getDate();
-    if (dayChanged && c.getHours() === 0) {
-      c.setHours(prev.getHours(), 0,0,0);
-    }
-    return c;
-  }
-
-  function snapStartToValid(chosen, prevStart){
-    const before = prevStart ? new Date(prevStart.getTime()) : null;
-
-    chosen = snapToHour(preserveHourIfDayClick(chosen, prevStart));
-
-    if (!reserveMode) {
-      return defaultCheckoutStart();
-    }
-
-    // must be >= next full hour
-    if (chosen < minReservationStart) chosen = new Date(minReservationStart.getTime());
-
-    const dayClicked =
-      before &&
-      (chosen.getFullYear() !== before.getFullYear() ||
-      chosen.getMonth() !== before.getMonth() ||
-      chosen.getDate() !== before.getDate());
-
-    // If user clicked a day cell (often yields 00:00), pick the FIRST valid hour that day
-    if (dayClicked && chosen.getHours() === 0) {
-      const first = firstValidHourOnDay(chosen, minReservationStart, null);
-      if (first) return firstOpenHourFrom(first);
-      return firstOpenHourFrom(chosen);
-    }
-
-    // If the chosen hour is blocked, jump to the nearest open hour.
-    // If the user went backward in time (e.g. clicked hour arrow down), jump BACKWARD
-    // so they can reach times before the block without getting stuck.
-    // Otherwise jump FORWARD (e.g. user arrowed up into a block).
-    if (isDTBlocked(chosen)) {
-      if (before && chosen < before) {
-        return lastOpenHourBefore(chosen);
-      }
-      return firstOpenHourFrom(chosen);
-    }
-
-    return chosen;
-  }
-
-  function snapEndToValid(chosen, prevEnd){
-    chosen = snapToHour(preserveHourIfDayClick(chosen, prevEnd));
-
-    const maxEnd = maxAllowedEnd(startDT);
-
-    // window clamp
-    if (chosen < startDT) chosen = new Date(startDT.getTime());
-    if (maxEnd && chosen > maxEnd) chosen = new Date(maxEnd.getTime());
-
-    // if blocked or day-click weirdness -> snap to LAST valid hour on that day
-    if (chosen.getHours() === 0 || isDTBlocked(chosen)) {
-      const last = lastValidHourOnDay(chosen, startDT, maxEnd);
-      if (last) chosen = last;
-    }
-
-    // if still blocked, walk back hour-by-hour but not below start
-    while (isDTBlocked(chosen) && chosen > startDT) {
-      chosen = snapToHour(addHours(chosen, -1));
-    }
-    if (chosen < startDT) chosen = new Date(startDT.getTime());
-
-    return chosen;
-  }
-
-  // ---------------- initial start/end ----------------
-  let startDT;
-  if (reserveMode) {
-    startDT = composeFromHidden(checkoutDateHidden, checkoutHourHidden, defaultReservationStart());
-    startDT = snapStartToValid(startDT, null);
-  } else {
-    startDT = defaultCheckoutStart();
-  }
-  writeHiddenFromDT(startDT, checkoutDateHidden, checkoutHourHidden);
-
-  let endDT = composeFromHidden(expectedDateHidden, expectedHourHidden, chooseDefaultEnd(startDT));
-  endDT = snapEndToValid(endDT, null);
-  writeHiddenFromDT(endDT, expectedDateHidden, expectedHourHidden);
-
-  // ---------------- recursion guards ----------------
-  let syncingStart = false;
-  let syncingEnd = false;
-  let endWasAuto = true;           // starts as auto
-  let changingEndFromStart = false; // guard when we set end programmatically
-
-  function handleStartPicked(picker, selectedDates) {
-    if (!selectedDates.length) return;
-    if (syncingStart) return;
-    syncingStart = true;
-
-    const prev = startDT;
-    let chosen = selectedDates[0];
-    chosen = snapStartToValid(chosen, prev);
-
-    startDT = chosen;
-    picker.setDate(chosen, false);
-    writeHiddenFromDT(chosen, checkoutDateHidden, checkoutHourHidden);
-
-    // update end based on start change
-    expectedPicker.set('disable', [disableEndDay]);
-
-    changingEndFromStart = true;
-
-    let newEnd;
-    if (endWasAuto) newEnd = chooseDefaultEnd(startDT);
-    else newEnd = expectedPicker.selectedDates[0] ? expectedPicker.selectedDates[0] : chooseDefaultEnd(startDT);
-
-    newEnd = snapEndToValid(newEnd, endDT);
-    endDT = newEnd;
-
-    expectedPicker.setDate(newEnd, false);
-    writeHiddenFromDT(newEnd, expectedDateHidden, expectedHourHidden);
-    expectedPicker.redraw();
-
-    changingEndFromStart = false;
-
-    syncingStart = false;
-  }
-
-  const weekStart = {{ (int)($snipeSettings->week_start ?? 0) }};
-  const fpLocale = {
-    firstDayOfWeek: weekStart
-  };
-
-  // ---------------- init pickers ----------------
-  const expectedPicker = flatpickr(expectedDTEl, {
-    enableTime: true,
-    time_24hr: true,
-    minuteIncrement: 60,
-    dateFormat: "Y-m-d H:i",
-    allowInput: false,
-    clickOpens: true,
-    locale:     fpLocale,
-    disable: [disableEndDay],
-    defaultDate: endDT,
-    defaultHour: endDT.getHours(),
-    defaultMinute: 0,
-
-    // catch hour-arrow changes too
-    onValueUpdate: function(selectedDates){
-      if (!selectedDates.length) return;
-      if (syncingEnd) return;
-      syncingEnd = true;
-      if (!changingEndFromStart) endWasAuto = false;
-
-      const prev = endDT;
-      let chosen = selectedDates[0];
-      chosen = snapEndToValid(chosen, prev);
-
-      endDT = chosen;
-      this.setDate(chosen, false);
-      writeHiddenFromDT(chosen, expectedDateHidden, expectedHourHidden);
-
-      syncingEnd = false;
-    },
-
-    onChange: function(selectedDates){
-      if (!selectedDates.length) return;
-      if (syncingEnd) return;
-      syncingEnd = true;
-      if (!changingEndFromStart) endWasAuto = false;
-
-      const prev = endDT;
-      let chosen = selectedDates[0];
-      chosen = snapEndToValid(chosen, prev);
-
-      endDT = chosen;
-      this.setDate(chosen, false);
-      writeHiddenFromDT(chosen, expectedDateHidden, expectedHourHidden);
-
-      syncingEnd = false;
-    }
-  });
-
-  const checkoutPicker = flatpickr(checkoutDTEl, {
-    enableTime: true,
-    time_24hr: true,
-    minuteIncrement: 60,
-    dateFormat: "Y-m-d H:i",
-    allowInput: false,
-    clickOpens: reserveMode,
-    locale:     fpLocale,
-    disable: reserveMode ? [disableStartDay] : [],
-    defaultDate: startDT,
-    defaultHour: startDT.getHours(),
-    defaultMinute: 0,
-    
-
-    onValueUpdate: function(selectedDates){
-      if (!selectedDates.length) return;
-      if (syncingStart) return;
-      syncingStart = true;
-
-      const prev = startDT;
-      let chosen = selectedDates[0];
-      chosen = snapStartToValid(chosen, prev);
-
-      startDT = chosen;
-      this.setDate(chosen, false);
-      writeHiddenFromDT(chosen, checkoutDateHidden, checkoutHourHidden);
-
-      expectedPicker.set('disable', [disableEndDay]);
-
-      changingEndFromStart = true;
-
-      let newEnd;
-      if (endWasAuto) {
-        // recompute default whenever start changes (this is what you wanted)
-        newEnd = chooseDefaultEnd(startDT);
-      } else {
-        // user manually set end earlier -> keep it if still valid, otherwise snap/clamp
-        const cur = expectedPicker.selectedDates[0];
-        newEnd = cur ? cur : chooseDefaultEnd(startDT);
-      }
-
-      newEnd = snapEndToValid(newEnd, endDT);
-      endDT = newEnd;
-
-      expectedPicker.setDate(newEnd, false);
-      writeHiddenFromDT(newEnd, expectedDateHidden, expectedHourHidden);
-      expectedPicker.redraw();
-
-      changingEndFromStart = false;
-
-
-      syncingStart = false;
-    },
-
-    onChange: function(selectedDates){
-      if (!selectedDates.length) return;
-      if (syncingStart) return;
-      syncingStart = true;
-      
-
-      const prev = startDT;
-      let chosen = selectedDates[0];
-      chosen = snapStartToValid(chosen, prev);
-
-      startDT = chosen;
-      this.setDate(chosen, false);
-      writeHiddenFromDT(chosen, checkoutDateHidden, checkoutHourHidden);
-
-      expectedPicker.set('disable', [disableEndDay]);
-
-      changingEndFromStart = true;
-
-      let newEnd;
-      if (endWasAuto) {
-        // recompute default whenever start changes (this is what you wanted)
-        newEnd = chooseDefaultEnd(startDT);
-      } else {
-        // user manually set end earlier -> keep it if still valid, otherwise snap/clamp
-        const cur = expectedPicker.selectedDates[0];
-        newEnd = cur ? cur : chooseDefaultEnd(startDT);
-      }
-
-      newEnd = snapEndToValid(newEnd, endDT);
-      endDT = newEnd;
-
-      expectedPicker.setDate(newEnd, false);
-      writeHiddenFromDT(newEnd, expectedDateHidden, expectedHourHidden);
-      expectedPicker.redraw();
-
-      changingEndFromStart = false;
-
-
-      syncingStart = false;
-    }
-  });
-
-  // normal checkout should stay read-only start
-  if (!reserveMode) {
-    checkoutDTEl.setAttribute('readonly', 'readonly');
-    // NOTE: do NOT add a class that kills pointer-events unless you want it.
-  }
-    // ---------------- expected_checkin + self-checkout depend on checkout_to_type ----------------
-    const expectedGroup = document.getElementById('expected_checkin_group');
-
-    function rawCheckoutToType() {
-      // radios
-      const checked = document.querySelector('input[name="checkout_to_type"]:checked');
-      if (checked) return checked.value;
-
-      // select
-      const sel = document.querySelector('select[name="checkout_to_type"]');
-      if (sel) return sel.value;
-
-      // fallback: hidden input
-      const hidden = document.querySelector('input[name="checkout_to_type"][type="hidden"]');
-      if (hidden) return hidden.value;
-
-      return '';
-    }
-
-    // normalize values like: "User", "users", "Users" -> "user"
-    function checkoutToType() {
-      const t = String(rawCheckoutToType() || '').toLowerCase();
-      if (t.includes('user')) return 'user';
-      if (t.includes('asset')) return 'asset';
-      if (t.includes('location')) return 'location';
-      return t;
-    }
-
-
-    function setExpectedVisibility() {
-      if (!expectedGroup) return;
-
-      const t = checkoutToType();
-      const shouldHide = (t === 'asset');
-
-
-      if (shouldHide) {
-        expectedGroup.style.display = 'none';
-
-        // disable visible input
-        expectedDTEl.value = '';
-        expectedDTEl.setAttribute('disabled', 'disabled');
-
-        // clear submitted hidden values so backend doesn't see expected_checkin required
-        expectedDateHidden.value = '';
-        expectedHourHidden.value = '';
-      } else {
-        expectedGroup.style.display = '';
-
-        expectedDTEl.removeAttribute('disabled');
-
-        // If empty, reinitialize to a valid end based on current startDT
-        if (!expectedDateHidden.value || expectedHourHidden.value === '') {
-          let restored = chooseDefaultEnd(startDT);
-          restored = snapEndToValid(restored, endDT);
-          endDT = restored;
-
-          expectedPicker.setDate(restored, false);
-          writeHiddenFromDT(restored, expectedDateHidden, expectedHourHidden);
-          expectedPicker.redraw();
+    window.assetCalendarInput = {
+        mode: 'reserve',
+        currentUser: @json(Auth::user()->username ?? (string)Auth::id()),
+        continuousCutMode: true,
+        assets: [{
+            id: @json((string)$asset->id),
+            name: @json($asset->name),
+            existingPeriods: {!! json_encode($calendarExistingPeriods) !!}
+        }]
+    };
+
+    window.assetCalendarOnConfirm = function(output) {
+        var periods = output && output.assets && output.assets[0] && output.assets[0].selectedPeriods;
+        if (!periods || periods.length === 0) {
+            alert('Please select a time period in the calendar.');
+            return;
         }
-      }
-    }
+        var period = periods[0];
+        var startParts = period.start.split(' ');
+        var endParts   = period.end.split(' ');
+        var startHour  = parseInt(startParts[1].split(':')[0], 10);
+        var endHour    = parseInt(endParts[1].split(':')[0], 10);
 
-    // Run once on load
-    setExpectedVisibility();
+        document.getElementById('checkout_at').value           = startParts[0];
+        document.getElementById('checkout_hour').value         = String(startHour);
+        document.getElementById('expected_checkin').value      = endParts[0];
+        document.getElementById('expected_checkin_hour').value = String(endHour);
+        document.getElementById('periods_json').value          = JSON.stringify(periods);
 
+        document.getElementById('assetCheckoutForm').submit();
+    };
+    </script>
 
+    {{-- Load calendar bundle but mount lazily when the calendar tab is first clicked --}}
+    <script>
+    (function() {
+        var calendarMounted = false;
+        document.addEventListener('shown.bs.tab', mountIfCalendar);
+        // Bootstrap 3 fires 'shown.bs.tab' on the <a>, not the <li>
+        document.querySelectorAll('a[href="#reserve-calendar"]').forEach(function(el) {
+            el.addEventListener('shown.bs.tab', mountIfCalendar);
+            // Bootstrap 3 uses jQuery events — also handle via jQuery if available
+        });
+        if (window.jQuery) {
+            jQuery('a[href="#reserve-calendar"]').on('shown.bs.tab', mountIfCalendar);
+        }
+        function mountIfCalendar() {
+            if (calendarMounted) return;
+            calendarMounted = true;
+            var script = document.createElement('script');
+            script.src = '{{ asset('vendor/asset-calendar/asset-calendar.js') }}';
+            document.body.appendChild(script);
+        }
+    })();
+    </script>
 
-    
+    <script>
+    document.addEventListener('DOMContentLoaded', function () {
+        // ---- Self-checkout enforcement ----
+        const form       = document.getElementById('assetCheckoutForm');
+        const isSelfOnly = {{ $onlySelfCheckout ? 'true' : 'false' }};
+        const selfUserId = {{ (int)($authUser?->id ?? 0) }};
 
-    // ---- Self-checkout: keep hidden assigned_user correct, and submit only when type=user ----
-    const form = document.getElementById('assetCheckoutForm');
-    const isSelfOnly = {{ $onlySelfCheckout ? 'true' : 'false' }};
-    const selfUserId = {{ (int)($authUser?->id ?? 0) }};
+        function checkoutType() {
+            return (
+                form?.querySelector('input[name="checkout_to_type"]:checked')?.value ||
+                form?.querySelector('select[name="checkout_to_type"]')?.value ||
+                form?.querySelector('input[name="checkout_to_type"][type="hidden"]')?.value ||
+                'user'
+            );
+        }
 
-    function checkoutType() {
-      return (
-        form?.querySelector('input[name="checkout_to_type"]:checked')?.value ||
-        form?.querySelector('select[name="checkout_to_type"]')?.value ||
-        form?.querySelector('input[name="checkout_to_type"][type="hidden"]')?.value ||
-        'user'
-      );
-    }
+        function enforceSelfCheckout() {
+            if (!form || !isSelfOnly || !selfUserId) return;
+            const t         = String(checkoutType()).toLowerCase();
+            const selfInput = form.querySelector('#self_assigned_user');
+            if (!selfInput) return;
+            if (t === 'user') {
+                selfInput.disabled = false;
+                selfInput.value    = String(selfUserId);
+            } else {
+                selfInput.value    = String(selfUserId);
+                selfInput.disabled = true;
+            }
+        }
 
-    function enforceSelfCheckout() {
-      if (!form || !isSelfOnly || !selfUserId) return;
-
-      const t = String(checkoutType()).toLowerCase();
-      const selfInput = form.querySelector('#self_assigned_user');
-
-      if (!selfInput) {
-        console.warn('self_assigned_user input missing from form');
-        return;
-      }
-
-      if (t === 'user') {
-        // MUST submit assigned_user and ensure it is not blank
-        selfInput.disabled = false;
-        selfInput.value = String(selfUserId);
-      } else {
-        // MUST NOT submit assigned_user when checking out to asset/location
-        selfInput.value = String(selfUserId); // keep safe
-        selfInput.disabled = true;            // disabled => not submitted
-      }
-    }
-
-    // Run once after everything has attached its listeners
-    setTimeout(enforceSelfCheckout, 0);
-
-    // Re-run after checkout_to_type changes (deferred so we run after other handlers)
-    document.addEventListener('change', function (e) {
-      if (!e.target) return;
-      if (
-        e.target.matches('input[name="checkout_to_type"]') ||
-        e.target.matches('select[name="checkout_to_type"]')
-      ) {
         setTimeout(enforceSelfCheckout, 0);
-      }
+
+        // ---- Toggle calendar tab vs direct submit based on checkout_to_type ----
+        const btnSubmitAsset  = document.getElementById('btn-submit-asset');
+        const btnOpenCalendar = document.getElementById('btn-open-calendar');
+        const calendarTabLi   = document.getElementById('calendar-tab-li');
+
+        function clearCheckoutValues() {
+            // Clear checkout values when switching to different type
+            const assignedUser = form?.querySelector('input[name="assigned_user"]');
+            const assignedAsset = form?.querySelector('input[name="assigned_asset"]');
+            const assignedLocation = form?.querySelector('input[name="assigned_location"]');
+            const assignedUserSelect = form?.querySelector('select[name="assigned_user"]');
+            const assignedAssetSelect = form?.querySelector('select[name="assigned_asset"]');
+            const assignedLocationSelect = form?.querySelector('select[name="assigned_location"]');
+            
+            // Clear all checkout target fields
+            if (assignedUser) assignedUser.value = '';
+            if (assignedAsset) assignedAsset.value = '';
+            if (assignedLocation) assignedLocation.value = '';
+            if (assignedUserSelect) assignedUserSelect.value = '';
+            if (assignedAssetSelect) assignedAssetSelect.value = '';
+            if (assignedLocationSelect) assignedLocationSelect.value = '';
+            
+            // Clear date fields
+            document.getElementById('checkout_at').value = '';
+            document.getElementById('checkout_hour').value = '';
+            document.getElementById('expected_checkin').value = '';
+            document.getElementById('expected_checkin_hour').value = '';
+            document.getElementById('periods_json').value = '';
+        }
+
+        function updateCheckoutButtons() {
+            const t = checkoutType();
+            const isAsset = (t === 'asset');
+            const isLocation = (t === 'location');
+            const isUser = (t === 'user');
+            
+            // Clear values when switching types
+            clearCheckoutValues();
+            
+            if (btnSubmitAsset)  btnSubmitAsset.style.display  = isAsset ? '' : 'none';
+            if (btnOpenCalendar) btnOpenCalendar.style.display = isAsset ? 'none' : '';
+            // Hide "Select dates" tab nav item for asset checkout
+            if (calendarTabLi) calendarTabLi.style.display = isAsset ? 'none' : '';
+        }
+
+        setTimeout(updateCheckoutButtons, 0);
+
+        document.addEventListener('change', function(e) {
+            if (!e.target) return;
+            if (
+                e.target.matches('input[name="checkout_to_type"]') ||
+                e.target.matches('select[name="checkout_to_type"]')
+            ) {
+                setTimeout(enforceSelfCheckout, 0);
+                setTimeout(updateCheckoutButtons, 0);
+            }
+        });
+
+        form?.addEventListener('submit', function() {
+            enforceSelfCheckout();
+        });
     });
-
-    // Absolute last line of defense
-    form?.addEventListener('submit', function () {
-      enforceSelfCheckout();
-    });
-
-
-
-
-
-
-    
-
-
-});
-</script>
-
-
-
-
+    </script>
 @stop

@@ -1594,43 +1594,28 @@
 
                         <?php $sidebar_quicklink_cats = \App\Models\Category::whereIn('name', ['Equipment', 'Facilities'])->get()->keyBy('name'); ?>
                         <li class="header"></li>
-                        <li class="treeview{{ ((request()->is('categories*') || request()->is('models*')) ? ' active' : '') }}">
-                                <a href="#">
-                                    <x-icon type="categories" class="fa-fw" />
-                                    <span>{{ trans('general.categories') }}</span>
-                                    <x-icon type="angle-left" class="pull-right fa-fw"/>
-                                </a>
-                                <ul class="treeview-menu">
-                                    <li{!! (request()->is('categories') ? ' class="active"' : '') !!}>
-                                        <a href="{{ route('categories.index') }}">
-                                            <x-icon type="circle" class="text-grey fa-fw"/>
-                                            {{ trans('general.categories') }}
-                                        </a>
-                                    </li>
-                                    @if(isset($sidebar_quicklink_cats['Equipment']))
-                                    <li{!! (request()->is('categories/'.$sidebar_quicklink_cats['Equipment']->id) ? ' class="active"' : '') !!}>
-                                        <a href="{{ route('categories.show', $sidebar_quicklink_cats['Equipment']->id) }}">
-                                            <x-icon type="circle" class="text-grey fa-fw"/>
-                                            Equipment
-                                        </a>
-                                    </li>
-                                    @endif
-                                    @if(isset($sidebar_quicklink_cats['Facilities']))
-                                    <li{!! (request()->is('categories/'.$sidebar_quicklink_cats['Facilities']->id) ? ' class="active"' : '') !!}>
-                                        <a href="{{ route('categories.show', $sidebar_quicklink_cats['Facilities']->id) }}">
-                                            <x-icon type="circle" class="text-grey fa-fw"/>
-                                            Facilities
-                                        </a>
-                                    </li>
-                                    @endif
-                                    <li{!! (request()->is('models') ? ' class="active"' : '') !!}>
-                                        <a href="{{ route('models.index') }}">
-                                            <x-icon type="circle" class="text-grey fa-fw"/>
-                                            {{ trans('general.asset_models') }}
-                                        </a>
-                                    </li>
-                                </ul>
-                            </li>
+                        <li{!! (request()->is('models') ? ' class="active"' : '') !!}>
+                            <a href="{{ route('models.index') }}">
+                                <x-icon type="categories" class="fa-fw"/>
+                                <span>{{ trans('general.asset_models') }}</span>
+                            </a>
+                        </li>
+                        @if(isset($sidebar_quicklink_cats['Equipment']))
+                        <li{!! (request()->is('categories/'.$sidebar_quicklink_cats['Equipment']->id) ? ' class="active"' : '') !!}>
+                            <a href="{{ route('categories.show', $sidebar_quicklink_cats['Equipment']->id) }}">
+                                <x-icon type="categories" class="fa-fw"/>
+                                <span>Equipment</span>
+                            </a>
+                        </li>
+                        @endif
+                        @if(isset($sidebar_quicklink_cats['Facilities']))
+                        <li{!! (request()->is('categories/'.$sidebar_quicklink_cats['Facilities']->id) ? ' class="active"' : '') !!}>
+                            <a href="{{ route('categories.show', $sidebar_quicklink_cats['Facilities']->id) }}">
+                                <x-icon type="categories" class="fa-fw"/>
+                                <span>Facilities</span>
+                            </a>
+                        </li>
+                        @endif
                     </ul>
                 </section>
                 <!-- /.sidebar -->

@@ -58,6 +58,14 @@ logs/*
 *.log
 *.retry
 
+# VS Code Copilot
+.claude/
+
+# Calendar/Frontend dependencies
+calendar/node_modules/
+calendar/dist/
+calendar/.vite/
+
 \.php_cs\.dist
 
 phpmd\.xml

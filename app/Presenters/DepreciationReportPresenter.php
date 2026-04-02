@@ -308,7 +308,7 @@ class DepreciationReportPresenter extends Presenter
      */
     public function statusMeta()
     {
-        if ($this->model->assigned) {
+        if ($this->model->assignedTo) {
             return 'deployed';
         }
         return $this->model->assetstatus->getStatuslabelType();
@@ -321,7 +321,7 @@ class DepreciationReportPresenter extends Presenter
      */
     public function statusText()
     {
-        if ($this->model->assigned) {
+        if ($this->model->assignedTo) {
             return trans('general.deployed');
         }
         return $this->model->assetstatus->name;
@@ -346,7 +346,7 @@ class DepreciationReportPresenter extends Presenter
         if ($this->assetstatus) {
 
             // If the status is assigned to someone or something...
-            if ($this->model->assigned) {
+            if ($this->model->assignedTo) {
 
                 // If it's assigned and not set to the default "ready to deploy" status
                 if ($this->assetstatus->name != trans('general.ready_to_deploy')) {

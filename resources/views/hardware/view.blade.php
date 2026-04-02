@@ -180,6 +180,17 @@
                     @endcan
 
 
+                    <li>
+                        <a href="#calendar" data-toggle="tab">
+                          <span class="hidden-lg hidden-md">
+                            <x-icon type="calendar" class="fa-2x" />
+                          </span>
+                            <span class="hidden-xs hidden-sm">
+                                Calendar
+                            </span>
+                        </a>
+                    </li>
+
                     @can('uploadFiles', \App\Models\Asset::class)
                         <li class="pull-right">
                             <a href="#" data-toggle="modal" data-target="#uploadFileModal">
@@ -237,17 +248,6 @@
                                                             <x-icon type="checkin" />
                                                             {{ trans('admin/hardware/general.checkin') }}
                                                         </a>
-                                                    </span>
-                                            </div>
-                                        @endcan
-                                    @elseif (($asset->assigned_to == '') && ($asset->deleted_at==''))
-                                        @can('checkout', $asset)
-                                            <div class="col-md-12 hidden-print" style="padding-top: 5px;">
-                                                    <span class="tooltip-wrapper"{!! (!$asset->model ? ' data-tooltip="true" title="'.trans('admin/hardware/general.model_invalid_fix').'"' : '') !!}>
-                                                        <a href="{{ route('hardware.checkout.create',['asset' => $asset->id, 'return_to' => url()->full()])  }}" class="btn btn-sm bg-maroon btn-social btn-block hidden-print{{ (!$asset->model ? ' disabled' : '') }}">
-                                                             <x-icon type="checkout" />
-                                                            {{ trans('admin/hardware/general.checkout') }}
-                                                    </a>
                                                     </span>
                                             </div>
                                         @endcan
@@ -1524,15 +1524,13 @@
 
                         
 
-    <div class="tab-pane fade" id="files">
-    <div class="row{{ ($asset->uploads->count() > 0 ) ? '' : ' hidden-print' }}>
-        <div class="col-md-12">
-            <x-filestable object_type="assets" :object="$asset" />
-        </div> <!-- /.col-md-12 -->
-    </div> <!-- /.row -->
-</div> <!-- /.tab-pane files -->
-
-
+                        <div class="tab-pane fade" id="files">
+                            <div class="row{{ ($asset->uploads->count() > 0 ) ? '' : ' hidden-print' }}">
+                                <div class="col-md-12">
+                                    <x-filestable object_type="assets" :object="$asset" />
+                                </div> <!-- /.col-md-12 -->
+                            </div> <!-- /.row -->
+                        </div> <!-- /.tab-pane files -->
 
                         @if ($asset->model)
                             @can('view', $asset->model)
@@ -1542,9 +1540,28 @@
                                             <x-filestable object_type="models" :object="$asset->model" />
                                         </div> <!-- /.col-md-12 -->
                                     </div> <!-- /.row -->
-                                </div> <!-- /.tab-pane files -->
+                                </div> <!-- /.tab-pane modelfiles -->
                             @endcan
                         @endif
+
+                        <div class="tab-pane fade" id="calendar">
+                            <div class="row">
+                                <div class="col-md-12" style="padding: 15px;">
+                                    <?php
+                                    $calendarRanges = $asset->calendarBlockedRanges();
+                                    $calendarExistingPeriods = collect($calendarRanges)->map(function($r) {
+                                        return [
+                                            'start'    => \Carbon\Carbon::parse($r['from'])->format('Y-m-d H:i'),
+                                            'end'      => $r['to'] ? \Carbon\Carbon::parse($r['to'])->format('Y-m-d H:i') : null,
+                                            'userName' => (string)($r['type'] ?? 'blocked'),
+                                        ];
+                                    })->values()->toArray();
+                                    ?>
+                                    <div id="asset-calendar-root"></div>
+                                </div>
+                            </div>
+                        </div><!-- /.tab-pane calendar -->
+
                 </div><!-- /.tab-content -->
             </div><!-- nav-tabs-custom -->
         </div>
@@ -1555,5 +1572,31 @@
     @stop
                 @section('moar_scripts')
         @include ('partials.bootstrap-table')
-
+        <script>
+        window.assetCalendarInput = {
+            mode: 'view',
+            currentUser: @json(Auth::user()->username ?? (string)Auth::id()),
+            continuousCutMode: true,
+            assets: [{
+                id: @json((string)$asset->id),
+                name: @json($asset->name),
+                existingPeriods: {!! json_encode($calendarExistingPeriods) !!}
+            }]
+        };
+        </script>
+        <script>
+        (function() {
+            var calendarMounted = false;
+            function mountIfCalendar() {
+                if (calendarMounted) return;
+                calendarMounted = true;
+                var script = document.createElement('script');
+                script.src = '{{ asset('vendor/asset-calendar/asset-calendar.js') }}';
+                document.body.appendChild(script);
+            }
+            if (window.jQuery) {
+                jQuery('a[href="#calendar"]').on('shown.bs.tab', mountIfCalendar);
+            }
+        })();
+        </script>
     @stop

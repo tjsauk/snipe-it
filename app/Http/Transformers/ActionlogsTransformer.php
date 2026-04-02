@@ -186,7 +186,13 @@ class ActionlogsTransformer
                 'type' => e($actionlog->targetType()),
             ] : null,
 
-            'note'          => ($actionlog->note) ? Helper::parseEscapedMarkedownInline($actionlog->note): null,
+            'note'          => ($actionlog->action_type === 'reserved')
+                ? (function() use ($actionlog) {
+                    $parts = explode("\x00", $actionlog->note ?? '', 2);
+                    $userNote = $parts[1] ?? '';
+                    return $userNote !== '' ? \App\Helpers\Helper::parseEscapedMarkedownInline($userNote) : null;
+                })()
+                : (($actionlog->note) ? Helper::parseEscapedMarkedownInline($actionlog->note) : null),
             'signature_file'   => ($actionlog->accept_signature) ? route('log.signature.view', ['filename' => $actionlog->accept_signature ]) : null,
             'log_meta'          => ((isset($clean_meta)) && (is_array($clean_meta))) ? $clean_meta: null,
             'remote_ip' => e($actionlog->remote_ip) ?? null,

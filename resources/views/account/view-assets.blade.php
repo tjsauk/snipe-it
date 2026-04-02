@@ -73,7 +73,10 @@
               </span>
               <span class="hidden-xs hidden-sm">
                 {{ trans('general.assets') }}
-                {!! ($user->assets()->AssetsForShow()->count() > 0 ) ? '<span class="badge badge-secondary">'.number_format($user->assets()->AssetsForShow()->count()).'</span>' : '' !!}
+                @php
+                  $totalAssetsCount = $user->assets()->AssetsForShow()->count() + (isset($active_now_assets) ? $active_now_assets->count() : 0);
+                @endphp
+                {!! $totalAssetsCount > 0 ? '<span class="badge badge-secondary">'.number_format($totalAssetsCount).'</span>' : '' !!}
             </span>
             </a>
           </li>
@@ -440,6 +443,14 @@
               $returnToAssets = url()->current() . '#assets';
             @endphp
 
+            <div class="nav-tabs-custom" style="margin: 10px; box-shadow: none;">
+              <ul class="nav nav-tabs">
+                <li class="active"><a href="#assets-list" data-toggle="tab">{{ trans('general.list') }}</a></li>
+                <li><a href="#assets-calendar" data-toggle="tab" id="profile-assets-calendar-tab"><i class="fa fa-calendar"></i> Calendar</a></li>
+              </ul>
+              <div class="tab-content">
+                <div class="tab-pane active" id="assets-list">
+
             <!-- checked out assets table -->
 
             <table
@@ -666,12 +677,137 @@
                     @endforeach
                     </tbody>
                   </table>
+
+                  {{-- Active-now reservations (reservation window currently running) --}}
+                  @if (isset($active_now_assets) && $active_now_assets->count() > 0)
+                  <h4 style="padding: 10px 0 5px;">
+                    <i class="fa fa-clock-o"></i> Active Reservations
+                  </h4>
+                  <table
+                    data-cookie-id-table="userActiveNowAssets"
+                    data-id-table="userActiveNowAssets"
+                    data-side-pagination="client"
+                    data-show-footer="true"
+                    id="userActiveNowAssets"
+                    class="table table-striped snipe-table">
+                    <caption class="tableCaption sr-only">Active Reservations</caption>
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>{{ trans('general.image') }}</th>
+                        <th>{{ trans('general.category') }}</th>
+                        <th>{{ trans('admin/hardware/table.asset_tag') }}</th>
+                        <th>{{ trans('general.name') }}</th>
+                        <th>{{ trans('admin/hardware/table.asset_model') }}</th>
+                        <th>Reserved until</th>
+                        <th class="hidden-print">{{ trans('general.action') }}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @foreach ($active_now_assets as $i => $aNow)
+                        @php
+                          $aNowReservation = $aNow->reservations()
+                            ->where('status', 'active')
+                            ->where('user_id', $selectedUserId)
+                            ->where('reserved_from', '<=', \Carbon\Carbon::now())
+                            ->where('reserved_until', '>', \Carbon\Carbon::now())
+                            ->first();
+                        @endphp
+                        <tr>
+                          <td>{{ $i + 1 }}</td>
+                          <td>
+                            @if ($aNow->image)
+                              <img src="{{ Storage::disk('public')->url(app('assets_upload_path').e($aNow->image)) }}" style="max-height:30px;width:auto" class="img-responsive" alt="">
+                            @elseif ($aNow->model && $aNow->model->image)
+                              <img src="{{ Storage::disk('public')->url(app('models_upload_path').e($aNow->model->image)) }}" style="max-height:30px;width:auto" class="img-responsive" alt="">
+                            @endif
+                          </td>
+                          <td>
+                            @if ($aNow->model && $aNow->model->category)
+                              {!! $aNow->model->category->present()->formattedNameLink !!}
+                            @endif
+                          </td>
+                          <td><a href="{{ route('hardware.show', $aNow->id) }}">{{ $aNow->asset_tag }}</a></td>
+                          <td><a href="{{ route('hardware.show', $aNow->id) }}">{{ $aNow->name }}</a></td>
+                          <td>{!! $aNow->model ? $aNow->model->present()->formattedNameLink : '' !!}</td>
+                          <td>
+                            @if ($aNowReservation && $aNowReservation->reserved_until)
+                              {{ Helper::getFormattedDateObject($aNowReservation->reserved_until_ui, 'datetime', false) }}
+                            @endif
+                          </td>
+                          <td class="hidden-print">
+                            @if ($aNowReservation)
+                              <form method="POST"
+                                    action="{{ route('hardware.reserve.destroy', [$aNow->id, $aNowReservation->id]) }}"
+                                    style="display:inline;">
+                                @csrf @method('DELETE')
+                                <input type="hidden" name="return_to" value="{{ $returnToAssets }}">
+                                <button type="submit" class="btn btn-sm btn-default">Cancel</button>
+                              </form>
+                            @endif
+                          </td>
+                        </tr>
+                      @endforeach
+                    </tbody>
+                  </table>
+                  @endif
+
+                </div>{{-- /.tab-pane#assets-list --}}
+
+                <div class="tab-pane" id="assets-calendar">
+                  @php
+                    // Build calendar data for checked-out + active-now assets
+                    $profileAssetsCalendarData = [];
+                    foreach ($user->assets()->AssetsForShow()->get() as $cAsset) {
+                        $profileAssetsCalendarData[] = [
+                            'id'   => (string)$cAsset->id,
+                            'name' => $cAsset->name ?? $cAsset->asset_tag,
+                            'existingPeriods' => collect($cAsset->calendarBlockedRanges())->map(function($r) {
+                                return [
+                                    'start'    => \Carbon\Carbon::parse($r['from'])->format('Y-m-d H:i'),
+                                    'end'      => $r['to'] ? \Carbon\Carbon::parse($r['to'])->format('Y-m-d H:i') : null,
+                                    'userName' => (string)($r['type'] ?? 'blocked'),
+                                ];
+                            })->values()->toArray(),
+                        ];
+                    }
+                    foreach (($active_now_assets ?? collect()) as $aNow) {
+                        $profileAssetsCalendarData[] = [
+                            'id'   => (string)$aNow->id,
+                            'name' => $aNow->name ?? $aNow->asset_tag,
+                            'existingPeriods' => collect($aNow->calendarBlockedRanges())->map(function($r) {
+                                return [
+                                    'start'    => \Carbon\Carbon::parse($r['from'])->format('Y-m-d H:i'),
+                                    'end'      => $r['to'] ? \Carbon\Carbon::parse($r['to'])->format('Y-m-d H:i') : null,
+                                    'userName' => (string)($r['type'] ?? 'blocked'),
+                                ];
+                            })->values()->toArray(),
+                        ];
+                    }
+                  @endphp
+                  <div style="padding: 15px;">
+                    <div id="profile-assets-cal-root"></div>
+                  </div>
+                </div>{{-- /.tab-pane#assets-calendar --}}
+
+              </div>{{-- /.tab-content --}}
+            </div>{{-- /.nav-tabs-custom (assets inner) --}}
+
           </div><!-- /asset -->
 
           <div class="tab-pane" id="reservations">
             @php
               $returnToReservations = url()->current() . '#reservations';
             @endphp
+
+            {{-- Nested tabs: List | Calendar --}}
+            <div class="nav-tabs-custom" style="margin: 10px; box-shadow: none;">
+              <ul class="nav nav-tabs">
+                <li class="active"><a href="#reservations-list" data-toggle="tab">{{ trans('general.list') }}</a></li>
+                <li><a href="#reservations-calendar" data-toggle="tab" id="reservations-calendar-tab"><i class="fa fa-calendar"></i> Calendar</a></li>
+              </ul>
+              <div class="tab-content">
+                <div class="tab-pane active" id="reservations-list">
 
             <table
               data-cookie-id-table="userReservedAssets"
@@ -825,7 +961,38 @@
                 @endforeach
               </tbody>
             </table>
-          </div>
+
+                </div>{{-- /.tab-pane#reservations-list --}}
+
+                <div class="tab-pane" id="reservations-calendar">
+                  @php
+                    // Build calendar data: one asset entry per reserved asset, with all their active reservation periods
+                    $calendarAssets = [];
+                    foreach (($reserved_assets ?? collect()) as $rAsset) {
+                        $periods = [];
+                        foreach ($rAsset->activeReservations()->get() as $res) {
+                            $periods[] = [
+                                'start'    => \Carbon\Carbon::parse($res->reserved_from)->format('Y-m-d H:i'),
+                                'end'      => \Carbon\Carbon::parse($res->reserved_until)->subHour()->format('Y-m-d H:i'),
+                                'userName' => 'reservation',
+                            ];
+                        }
+                        $calendarAssets[] = [
+                            'id'              => (string)$rAsset->id,
+                            'name'            => $rAsset->name ?? $rAsset->asset_tag,
+                            'existingPeriods' => $periods,
+                        ];
+                    }
+                  @endphp
+                  <div style="padding: 15px;">
+                    <div id="profile-calendar-root"></div>
+                  </div>
+                </div>{{-- /.tab-pane#reservations-calendar --}}
+
+              </div>{{-- /.tab-content --}}
+            </div>{{-- /.nav-tabs-custom (inner) --}}
+
+          </div>{{-- /.tab-pane#reservations --}}
 
 
           <div class="tab-pane" id="licenses">
@@ -1038,4 +1205,48 @@
 
 @section('moar_scripts')
   @include ('partials.bootstrap-table')
+  <script src="{{ asset('vendor/asset-calendar/asset-calendar.js') }}"></script>
+  <script>
+  (function() {
+    var currentUser = @json(Auth::user()->username ?? (string)Auth::id());
+
+    console.log('[ProfileCalendar] Script loaded, window.assetCalendarMount:', typeof window.assetCalendarMount);
+
+    // Reservations tab — Calendar sub-tab
+    var reservationsCalData = {!! json_encode($calendarAssets ?? []) !!};
+    jQuery('#reservations-calendar-tab').on('shown.bs.tab', function() {
+      console.log('[ProfileCalendar] Reservations tab shown');
+      var rootEl = document.getElementById('profile-calendar-root');
+      console.log('[ProfileCalendar] rootEl:', rootEl);
+      console.log('[ProfileCalendar] window.assetCalendarMount:', typeof window.assetCalendarMount);
+      if (rootEl && typeof window.assetCalendarMount === 'function') {
+        console.log('[ProfileCalendar] Mounting reservations calendar...');
+        window.assetCalendarMount(rootEl, {
+          mode: 'view', currentUser: currentUser, continuousCutMode: true,
+          assets: reservationsCalData
+        });
+      } else {
+        console.error('[ProfileCalendar] Cannot mount - missing rootEl or assetCalendarMount function');
+      }
+    });
+
+    // Assets tab — Calendar sub-tab
+    var assetsCalData = {!! json_encode($profileAssetsCalendarData ?? []) !!};
+    jQuery('#profile-assets-calendar-tab').on('shown.bs.tab', function() {
+      console.log('[ProfileCalendar] Assets calendar tab shown');
+      var rootEl = document.getElementById('profile-assets-cal-root');
+      console.log('[ProfileCalendar] rootEl:', rootEl);
+      console.log('[ProfileCalendar] window.assetCalendarMount:', typeof window.assetCalendarMount);
+      if (rootEl && typeof window.assetCalendarMount === 'function') {
+        console.log('[ProfileCalendar] Mounting assets calendar...');
+        window.assetCalendarMount(rootEl, {
+          mode: 'view', currentUser: currentUser, continuousCutMode: true,
+          assets: assetsCalData
+        });
+      } else {
+        console.error('[ProfileCalendar] Cannot mount - missing rootEl or assetCalendarMount function');
+      }
+    });
+  })();
+  </script>
 @stop

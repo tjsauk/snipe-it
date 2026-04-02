@@ -53,12 +53,19 @@
   <div class="col-md-12">
     <div class="box box-default">
       <div class="box-body">
-       
+
+        <div class="nav-tabs-custom" style="margin-bottom: 0; box-shadow: none;">
+          <ul class="nav nav-tabs">
+            <li class="active"><a href="#assets-list-tab" data-toggle="tab">{{ trans('general.list') }}</a></li>
+            <li><a href="#assets-calendar-tab" data-toggle="tab" id="assets-calendar-nav-tab"><i class="fa fa-calendar"></i> Calendar</a></li>
+          </ul>
+          <div class="tab-content">
+            <div class="tab-pane active" id="assets-list-tab">
           <div class="row">
             <div class="col-md-12">
 
                 @include('partials.asset-bulk-actions', ['status' => Request::get('status')])
-                   
+
               <table
                 data-columns="{{ \App\Presenters\AssetPresenter::dataTableLayout() }}"
                 data-cookie-id-table="{{ request()->has('status') ? e(request()->input('status')) : ''  }}assetsListingTable"
@@ -88,7 +95,22 @@
 
             </div><!-- /.col -->
           </div><!-- /.row -->
-        
+
+            </div>{{-- /.tab-pane#assets-list-tab --}}
+
+            <div class="tab-pane" id="assets-calendar-tab">
+              <div style="padding: 15px;">
+                <p class="text-muted" id="assets-calendar-hint">
+                  <i class="fa fa-info-circle"></i>
+                  Select assets using the checkboxes in the List tab, then switch here to see their reservations.
+                </p>
+                <div id="assets-cal-root"></div>
+              </div>
+            </div>{{-- /.tab-pane#assets-calendar-tab --}}
+
+          </div>{{-- /.tab-content --}}
+        </div>{{-- /.nav-tabs-custom --}}
+
       </div><!-- ./box-body -->
     </div><!-- /.box -->
   </div>
@@ -97,5 +119,60 @@
 
 @section('moar_scripts')
 @include('partials.bootstrap-table')
+<script src="{{ asset('vendor/asset-calendar/asset-calendar.js') }}"></script>
+<script>
+(function() {
+    var currentUser = @json(Auth::user()->username ?? (string)Auth::id());
+    var tableId = '{{ (request()->has('status') ? e(request()->input('status')) : '') }}assetsListingTable';
 
+    jQuery('#assets-calendar-nav-tab').on('shown.bs.tab', loadAssetsCalendar);
+
+    function getSelectedIds() {
+        try {
+            var selections = jQuery('#' + tableId).bootstrapTable('getSelections');
+            if (selections && selections.length > 0) {
+                return selections.map(function(r) { return r.id; }).filter(Boolean);
+            }
+        } catch(e) {}
+        return [];
+    }
+
+    function loadAssetsCalendar() {
+        var ids    = getSelectedIds();
+        var hint   = document.getElementById('assets-calendar-hint');
+        var rootEl = document.getElementById('assets-cal-root');
+
+        if (ids.length === 0) {
+            if (hint) hint.style.display = '';
+            rootEl.innerHTML = '';
+            return;
+        }
+        if (hint) hint.style.display = 'none';
+
+        // Get CSRF token from meta tag
+        var csrfToken = document.querySelector('meta[name="csrf-token"]');
+        csrfToken = csrfToken ? csrfToken.getAttribute('content') : '';
+        
+        var headers = { 'X-Requested-With': 'XMLHttpRequest' };
+        if (csrfToken) {
+            headers['X-CSRF-TOKEN'] = csrfToken;
+        }
+
+        fetch('/api/v1/hardware/calendar-ranges?ids=' + ids.join(','), {
+            headers: headers
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(assets) {
+            if (typeof window.assetCalendarMount === 'function') {
+                window.assetCalendarMount(rootEl, {
+                    mode: 'view',
+                    currentUser: currentUser,
+                    continuousCutMode: true,
+                    assets: assets
+                });
+            }
+        });
+    }
+})();
+</script>
 @stop

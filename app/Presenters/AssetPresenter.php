@@ -604,7 +604,7 @@ class AssetPresenter extends Presenter
      */
     public function statusText()
     {
-        if ($this->model->assigned) {
+        if ($this->model->assignedTo) {
             return trans('general.deployed');
         }
 
@@ -631,7 +631,7 @@ class AssetPresenter extends Presenter
         if ($this->assetstatus) {
 
             // If the status is assigned to someone or something...
-            if ($this->model->assigned) {
+            if ($this->model->assignedTo) {
 
                 // If it's assigned and not set to the default "ready to deploy" status
                 if ($this->assetstatus->name != trans('general.ready_to_deploy')) {

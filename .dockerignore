@@ -8,6 +8,8 @@ app/storage/views/*
 vendor/*
 storage/framework/cache/*
 node_modules
+calendar/node_modules
+calendar/dist
 .vagrant
 .idea
 

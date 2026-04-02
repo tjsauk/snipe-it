@@ -206,9 +206,16 @@ class AssetCheckoutController extends Controller
                     ->with('error', trans('admin/hardware/message.does_not_exist'));
             }
 
-            // Detect reservation mode
-            $reserveMode = $request->boolean('reserve_mode')
-                || $request->routeIs('hardware.reserve.store');
+            // Reserve mode is auto-detected from the start datetime:
+            // start > current hour → future reservation; start <= current hour → immediate checkout.
+            $tzEarly         = config('app.timezone');
+            $checkoutRawDate = $request->get('checkout_at');
+            $checkoutRawHour = $request->filled('checkout_hour') ? (int) $request->get('checkout_hour') : 0;
+            $checkoutDTEarly = $checkoutRawDate
+                ? Carbon::parse($checkoutRawDate, $tzEarly)->setTime($checkoutRawHour, 0, 0)
+                : Carbon::now($tzEarly);
+            $currentHour = Carbon::now($tzEarly)->setTime(Carbon::now($tzEarly)->hour, 0, 0);
+            $reserveMode = $checkoutDTEarly->isAfter($currentHour);
 
             // Prefer explicit posted return_to, fall back to session
             $returnTo = $request->input('return_to') ?: session('return_to');
@@ -256,14 +263,8 @@ class AssetCheckoutController extends Controller
 
             
 
-            // Determine if this checkout is to another asset
-            // In Snipe-IT, "checkout_to_type" is usually a string like: user, location, asset
+            // Determine if this checkout is to another asset (no date selection needed)
             $isCheckoutToAsset = ($request->get('checkout_to_type') === 'asset');
-
-            // Reservations always need an end time, so only apply this to normal checkout flow
-            if ($reserveMode) {
-                $isCheckoutToAsset = false;
-            }
 
             $target = $this->determineCheckoutTarget();
 
@@ -275,7 +276,12 @@ class AssetCheckoutController extends Controller
             $asset = $this->updateAssetLocation($asset, $target);
 
             // ---- REQUIRE DATES ----
-            if (!$request->filled('checkout_at')) {
+            // Checkout-to-asset has no date picker — default to now
+            if ($isCheckoutToAsset && !$request->filled('checkout_at')) {
+                $nowTz = Carbon::now(config('app.timezone'));
+                $request->merge(['checkout_at' => $nowTz->toDateString(), 'checkout_hour' => $nowTz->hour]);
+            }
+            if (!$isCheckoutToAsset && !$request->filled('checkout_at')) {
                 return back()->withInput()->with('error', 'Checkout date is required.');
             }
 
@@ -401,39 +407,110 @@ class AssetCheckoutController extends Controller
                 //        ->with('error', 'You already have an active reservation for this asset.');
                 //}
 
-                // NO overlap with ongoing checkout period (hour-accurate)
-                if ($asset->overlapsOngoingCheckout($windowStartDT, $windowEndDT)) {
-                    return back()->withInput()->with('error', 'Reservation overlaps an ongoing checkout period.');
-                }
-
-                // If currently checked out, reservation must start AFTER expected_checkin moment
-                if (!is_null($asset->assigned_to) && $asset->expected_checkin) {
-                    $currentEnd = Carbon::parse($asset->expected_checkin);
-                    if ($windowStartDT->lt($currentEnd)) {
-                        return back()->withInput()->with('error', 'Reservation overlaps an ongoing checkout period.');
+                // Build list of all periods to reserve (multi-period support)
+                $periodsJson = $request->input('periods_json');
+                $allPeriodInputs = [];
+                if ($periodsJson) {
+                    $decoded = json_decode($periodsJson, true);
+                    if (is_array($decoded) && count($decoded) > 0) {
+                        foreach ($decoded as $p) {
+                            $sParts = explode(' ', $p['start'] ?? '');
+                            $eParts = explode(' ', $p['end'] ?? '');
+                            if (count($sParts) < 2 || count($eParts) < 2) continue;
+                            $allPeriodInputs[] = [
+                                'start_date' => $sParts[0],
+                                'start_hour' => (int) explode(':', $sParts[1])[0],
+                                'end_date'   => $eParts[0],
+                                'end_hour'   => (int) explode(':', $eParts[1])[0],
+                            ];
+                        }
                     }
                 }
-
-                // NO overlap with ANY other reservation (hour-accurate)
-                if ($asset->overlapsReservations($windowStartDT, $windowEndDT)) {
-                    return back()->withInput()->with('error', 'Reservation overlaps an existing reservation.');
+                // Fall back to single period from primary form fields
+                if (empty($allPeriodInputs)) {
+                    $allPeriodInputs[] = [
+                        'start_date' => $checkoutRawDate,
+                        'start_hour' => $checkoutRawHour,
+                        'end_date'   => $request->get('expected_checkin'),
+                        'end_hour'   => $request->filled('expected_checkin_hour') ? (int) $request->get('expected_checkin_hour') : 0,
+                    ];
                 }
 
-                AssetReservation::create([
-                    'asset_id'       => $asset->id,
-                    'user_id'        => $reservationUserId,
-                    'reserved_from'  => $windowStartDT->format('Y-m-d H:i:s'),
-                    'reserved_until' => $windowEndDT->format('Y-m-d H:i:s'),
-                    'status'         => 'active',
-                ]);
+                $successCount = 0;
+                $periodErrors = [];
+
+                foreach ($allPeriodInputs as $idx => $pi) {
+                    $pStartDT = Carbon::parse($pi['start_date'], $tz)->setTime($pi['start_hour'], 0, 0);
+                    $pEndSlot = Carbon::parse($pi['end_date'], $tz)->setTime($pi['end_hour'], 0, 0);
+                    $pEndDT   = $pEndSlot->copy()->addHour();
+
+                    if (!$pStartDT->isFuture()) {
+                        $periodErrors[] = 'Period ' . ($idx + 1) . ': must start in the future.';
+                        continue;
+                    }
+                    if ($pEndDT->lte($pStartDT)) {
+                        $periodErrors[] = 'Period ' . ($idx + 1) . ': end must be after start.';
+                        continue;
+                    }
+                    if ($asset->overlapsOngoingCheckout($pStartDT, $pEndDT)) {
+                        $periodErrors[] = 'Period ' . ($idx + 1) . ': overlaps ongoing checkout.';
+                        continue;
+                    }
+                    if (!is_null($asset->assigned_to) && $asset->expected_checkin) {
+                        $currentEnd = Carbon::parse($asset->expected_checkin);
+                        if ($pStartDT->lt($currentEnd)) {
+                            $periodErrors[] = 'Period ' . ($idx + 1) . ': overlaps ongoing checkout.';
+                            continue;
+                        }
+                    }
+                    if ($asset->overlapsReservations($pStartDT, $pEndDT)) {
+                        $periodErrors[] = 'Period ' . ($idx + 1) . ': overlaps existing reservation.';
+                        continue;
+                    }
+
+                    AssetReservation::create([
+                        'asset_id'       => $asset->id,
+                        'user_id'        => $reservationUserId,
+                        'reserved_from'  => $pStartDT->format('Y-m-d H:i:s'),
+                        'reserved_until' => $pEndDT->format('Y-m-d H:i:s'),
+                        'status'         => 'active',
+                    ]);
+
+                    // Log to asset history
+                    // note format: "PERIOD\x00USER_NOTE" — split on null byte in presenter/transformer
+                    $log = new \App\Models\Actionlog;
+                    $log->item_type  = \App\Models\Asset::class;
+                    $log->item_id    = $asset->id;
+                    $log->created_by = auth()->id();
+                    $log->target_type = \App\Models\User::class;
+                    $log->target_id   = $reservationUserId;
+                    $period = $pStartDT->format('Y-m-d H:i') . ' – ' . $pEndDT->copy()->subHour()->format('Y-m-d H:i');
+                    $userNote = $request->input('note', '');
+                    $log->note = $period . "\x00" . $userNote;
+                    $log->logaction('reserved');
+
+                    $successCount++;
+                }
+
+                if ($successCount === 0) {
+                    return back()->withInput()->with('error',
+                        implode(' | ', $periodErrors) ?: 'No reservations could be created.');
+                }
+
+                $msg = $successCount > 1
+                    ? "$successCount reservations created successfully."
+                    : 'Reservation created successfully.';
+                if (!empty($periodErrors)) {
+                    $msg .= ' Some periods skipped: ' . implode(' | ', $periodErrors);
+                }
 
                 if ($returnTo) {
                     session()->forget('return_to');
-                    return redirect($returnTo)->with('success', 'Reservation created successfully.');
+                    return redirect($returnTo)->with('success', $msg);
                 }
 
                 return Helper::getRedirectOption($request, $asset->id, 'Assets')
-                    ->with('success', 'Reservation created successfully.');
+                    ->with('success', $msg);
 
             }
 

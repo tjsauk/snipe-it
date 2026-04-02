@@ -12,7 +12,10 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('asset_models', function (Blueprint $table) {
-            //
+            $table->boolean('allow_checkout_to_user')->default(true)->after('require_serial');
+            $table->boolean('allow_checkout_to_asset')->default(false)->after('allow_checkout_to_user');
+            $table->boolean('allow_checkout_to_location')->default(false)->after('allow_checkout_to_asset');
+            $table->boolean('auto_checkin')->default(false)->after('allow_checkout_to_location');
         });
     }
 
@@ -22,7 +25,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('asset_models', function (Blueprint $table) {
-            //
+            $table->dropColumn(['allow_checkout_to_user', 'allow_checkout_to_asset', 'allow_checkout_to_location', 'auto_checkin']);
         });
     }
 };

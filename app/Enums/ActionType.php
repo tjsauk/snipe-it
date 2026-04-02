@@ -12,6 +12,8 @@ enum ActionType: string
     // Assets/Accessories/Components/Licenses/Consumables
     case Checkout = 'checkout';
     case CheckinFrom = 'checkin from';
+    case Reserved = 'reserved';
+    case ReservationCanceled = 'reservation canceled';
     case Requested = 'requested';
     case RequestCanceled = 'request canceled';
     case Accepted = 'accepted';

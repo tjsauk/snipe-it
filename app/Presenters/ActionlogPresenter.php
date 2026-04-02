@@ -116,6 +116,11 @@ class ActionlogPresenter extends Presenter
 
     public function actionType()
     {
+        if ($this->action_type === 'reserved') {
+            $parts = explode("\x00", $this->note ?? '', 2);
+            $period = $parts[0] ?? '';
+            return $period ? 'Reserved ' . $period : 'reserved';
+        }
         return mb_strtolower(trans('general.'.str_replace(' ', '_', $this->action_type)));
     }
 

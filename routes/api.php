@@ -580,6 +580,32 @@ Route::group(['prefix' => 'v1', 'middleware' => ['api', 'api-throttle:api']], fu
           )->name('api.assets.assigned_components');
           /** End assigned routes */
 
+          // Calendar data for multiple assets (comma-separated ids query param)
+          Route::get('calendar-ranges', function (\Illuminate\Http\Request $request) {
+              $ids = array_filter(array_map('intval', explode(',', $request->input('ids', ''))));
+              if (empty($ids)) {
+                  return response()->json([]);
+              }
+              $assets = \App\Models\Asset::whereIn('id', $ids)->get();
+              $result = [];
+              foreach ($assets as $asset) {
+                  $ranges = $asset->calendarBlockedRanges();
+                  $periods = collect($ranges)->map(function($r) {
+                      return [
+                          'start'    => \Carbon\Carbon::parse($r['from'])->format('Y-m-d H:i'),
+                          'end'      => $r['to'] ? \Carbon\Carbon::parse($r['to'])->format('Y-m-d H:i') : null,
+                          'userName' => (string)($r['type'] ?? 'blocked'),
+                      ];
+                  })->values()->toArray();
+                  $result[] = [
+                      'id'              => (string)$asset->id,
+                      'name'            => $asset->name ?? $asset->asset_tag,
+                      'existingPeriods' => $periods,
+                  ];
+              }
+              return response()->json($result);
+          })->name('api.assets.calendar-ranges');
+
       });
 
 

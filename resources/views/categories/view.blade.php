@@ -46,6 +46,11 @@
                             @endif
                         </a>
                     </li>
+                    <li>
+                        <a href="#cat-calendar" data-toggle="tab" id="cat-calendar-tab">
+                            <i class="fa fa-calendar"></i> Calendar
+                        </a>
+                    </li>
                    @endif
                 </ul>
                 <div class="tab-content">
@@ -162,6 +167,18 @@
                         </div>
                     </div>
 
+                    @if ($category->category_type=='asset')
+                    <div class="tab-pane fade" id="cat-calendar">
+                        <div style="padding: 15px;">
+                            <p class="text-muted" id="cat-calendar-hint" style="margin-bottom: 10px;">
+                                <i class="fa fa-info-circle"></i>
+                                Select assets using the checkboxes in the Assets tab, then switch here to see their reservations.
+                            </p>
+                            <div id="cat-calendar-root"></div>
+                        </div>
+                    </div>
+                    @endif
+
                 </div> <!-- .tab-content-->
             </div> <!-- .nav-tabs-custom -->
         </div> <!-- .col-md-12> -->
@@ -174,4 +191,61 @@
 
 @section('moar_scripts')
 @include ('partials.bootstrap-table')
+@if ($category->category_type=='asset')
+<script src="{{ asset('vendor/asset-calendar/asset-calendar.js') }}"></script>
+<script>
+(function() {
+    var currentUser = @json(Auth::user()->username ?? (string)Auth::id());
+
+    jQuery('#cat-calendar-tab').on('shown.bs.tab', loadCategoryCalendar);
+
+    function getSelectedIds() {
+        try {
+            var selections = jQuery('#categoryAssetsTable').bootstrapTable('getSelections');
+            if (selections && selections.length > 0) {
+                return selections.map(function(r) { return r.id; }).filter(Boolean);
+            }
+        } catch(e) {}
+        return [];
+    }
+
+    function loadCategoryCalendar() {
+        var ids = getSelectedIds();
+        var hint   = document.getElementById('cat-calendar-hint');
+        var rootEl = document.getElementById('cat-calendar-root');
+
+        if (ids.length === 0) {
+            if (hint) hint.style.display = '';
+            rootEl.innerHTML = '';
+            return;
+        }
+        if (hint) hint.style.display = 'none';
+
+        // Get CSRF token from meta tag
+        var csrfToken = document.querySelector('meta[name="csrf-token"]');
+        csrfToken = csrfToken ? csrfToken.getAttribute('content') : '';
+        
+        var headers = { 'X-Requested-With': 'XMLHttpRequest' };
+        if (csrfToken) {
+            headers['X-CSRF-TOKEN'] = csrfToken;
+        }
+
+        fetch('/api/v1/hardware/calendar-ranges?ids=' + ids.join(','), {
+            headers: headers
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(assets) {
+            if (typeof window.assetCalendarMount === 'function') {
+                window.assetCalendarMount(rootEl, {
+                    mode: 'view',
+                    currentUser: currentUser,
+                    continuousCutMode: true,
+                    assets: assets
+                });
+            }
+        });
+    }
+})();
+</script>
+@endif
 @stop
