@@ -131,8 +131,12 @@ class ViewAssetsController extends Controller
             'assets.reservations.user',
             'consumables',
             'accessories',
-            'licenses'
+            'licenses',
+            'groups',
         ])->find($selectedUserId);
+
+        // Ensure the auth user's groups are loaded for the welcome banner
+        auth()->user()->loadMissing('groups');
 
         // If the user to view couldn't be found (shouldn't happen with proper logic), redirect with error
         if (!$userToView) {

@@ -423,20 +423,29 @@
                                             <x-icon type="long-arrow-right" />
                                         </h2>
 
-                                        <ul class="list-unstyled" style="line-height: 25px; font-size: 14px">
-
-                                            @if (($asset->checkedOutToUser()) && ($asset->assignedTo->present()->gravatar()))
-                                                <li>
-                                                    <img src="{{ $asset->assignedTo->present()->gravatar() }}" class="user-image-inline hidden-print" alt="{{ $asset->assignedTo->display_name }}">
-                                                    {!! $asset->assignedTo->present()->nameUrl() !!}
-                                                </li>
-                                            @else
-                                                <li>
+                                        <div style="font-size: 14px; margin-bottom: 6px;">
+                                            {{-- Row 1: icon/avatar + username link --}}
+                                            <div style="margin-bottom: 3px;">
+                                                @if ($asset->checkedOutToUser() && $asset->assignedTo->present()->gravatar())
+                                                    <img src="{{ $asset->assignedTo->present()->gravatar() }}" style="height: 20px; width: 20px; border-radius: 50%; vertical-align: middle; margin-right: 4px;" alt="">
+                                                @else
                                                     <x-icon type="{{ $asset->assignedType() }}" class="fa-fw" />
+                                                @endif
+                                                @if ($asset->checkedOutToUser() && $asset->assignedTo->username)
+                                                    <a href="{{ route('users.show', $asset->assignedTo->id) }}">{{ $asset->assignedTo->username }}</a>
+                                                @else
                                                     {!! $asset->assignedTo->present()->nameUrl() !!}
-                                                </li>
+                                                @endif
+                                            </div>
+                                            {{-- Row 2: full name indented (only for users) --}}
+                                            @if ($asset->checkedOutToUser())
+                                                <div style="padding-left: 24px; color: #555;">
+                                                    {{ $asset->assignedTo->first_name }} {{ $asset->assignedTo->last_name }}
+                                                </div>
                                             @endif
+                                        </div>
 
+                                        <ul class="list-unstyled" style="font-size: 14px; margin: 0; padding: 0;">
 
                                             @if ((isset($asset->assignedTo->employee_num)) && ($asset->assignedTo->employee_num!=''))
                                                 <li>
@@ -445,8 +454,8 @@
                                                 </li>
                                             @endif
                                             @if ((isset($asset->assignedTo->email)) && ($asset->assignedTo->email!=''))
-                                                <li>
-                                                    <x-icon type="email" class="fa-fw" />
+                                                <li style="display: flex; align-items: center; gap: 6px;">
+                                                    <x-icon type="email" class="fa-fw" style="flex-shrink: 0;" />
                                                     <a href="mailto:{{ $asset->assignedTo->email }}">{{ $asset->assignedTo->email }}</a>
                                                 </li>
                                             @endif
@@ -497,7 +506,43 @@
                                                 </li>
                                             @endif
                                         </ul>
+
+                                        {{-- Reservation status display --}}
+                                        @php $activeReservations = $asset->activeReservations()->with('user')->get(); @endphp
+                                        @if ($activeReservations->count() > 0)
+                                            <div style="margin-top: 8px;">
+                                                <span class="label label-warning">RESERVED</span>
+                                                <ul class="list-unstyled" style="margin-top: 5px; padding-left: 0; font-size: 13px;">
+                                                    @foreach($activeReservations as $res)
+                                                        <li style="white-space: nowrap;">
+                                                            {{ optional($res->user)->username ?? optional($res->user)->email ?? 'User #'.$res->user_id }}:
+                                                            {{ Helper::getFormattedDateObject($res->reserved_from, 'datetime', false) }}
+                                                            –
+                                                            {{ Helper::getFormattedDateObject($res->reserved_until_ui, 'datetime', false) }}
+                                                        </li>
+                                                    @endforeach
+                                                </ul>
+                                            </div>
+                                        @endif
                                     </div>
+                                @endif
+                                @if (!$asset->assignedTo || $asset->deleted_at != '')
+                                    @php $activeReservations = $asset->activeReservations()->with('user')->get(); @endphp
+                                    @if ($activeReservations->count() > 0)
+                                        <div class="col-md-12" style="margin-bottom: 8px;">
+                                            <span class="label label-warning">RESERVED</span>
+                                            <ul class="list-unstyled" style="margin-top: 5px; padding-left: 0; font-size: 13px;">
+                                                @foreach($activeReservations as $res)
+                                                    <li style="white-space: nowrap;">
+                                                        {{ optional($res->user)->username ?? optional($res->user)->email ?? 'User #'.$res->user_id }}:
+                                                        {{ Helper::getFormattedDateObject($res->reserved_from, 'datetime', false) }}
+                                                        –
+                                                        {{ Helper::getFormattedDateObject($res->reserved_until_ui, 'datetime', false) }}
+                                                    </li>
+                                                @endforeach
+                                            </ul>
+                                        </div>
+                                    @endif
                                 @endif
                                 @if (($snipeSettings->qr_code=='1') || $snipeSettings->label2_2d_type!='none')
                                     <div class="col-md-12 text-center" style="padding-top: 15px;">
@@ -576,24 +621,14 @@
                                     @endif
 
                                     {{-- Reservation status display --}}
-                                    @php
-                                        $activeReservations = $asset->activeReservations()->with('user')->get();
-                                    @endphp
-
+                                    @php $activeReservations = $asset->activeReservations()->with('user')->get(); @endphp
                                     @if ($activeReservations->count() > 0)
-                                        <div style="margin-top: 5px;">
-                                            {{-- Yellow "Reserved" badge --}}
-                                            <span class="label label-warning">
-                                                RESERVED
-                                            </span>
-
-                                            {{-- List reservations with user and date range --}}
-                                            <ul style="margin-top: 5px; padding-left: 18px;">
+                                        <div style="margin-top: 10px;">
+                                            <span class="label label-warning">RESERVED</span>
+                                            <ul class="list-unstyled" style="margin-top: 5px; padding-left: 0; font-size: 14px;">
                                                 @foreach($activeReservations as $res)
                                                     <li style="white-space: nowrap;">
-                                                        {{ optional($res->user)->username
-                                                            ?? optional($res->user)->email
-                                                            ?? 'User #'.$res->user_id }}:
+                                                        {{ optional($res->user)->username ?? optional($res->user)->email ?? 'User #'.$res->user_id }}:
                                                         {{ Helper::getFormattedDateObject($res->reserved_from, 'datetime', false) }}
                                                         –
                                                         {{ Helper::getFormattedDateObject($res->reserved_until_ui, 'datetime', false) }}
@@ -602,8 +637,6 @@
                                             </ul>
                                         </div>
                                     @endif
-
-
 
                                     @if ($asset->company)
                                         <div class="row">

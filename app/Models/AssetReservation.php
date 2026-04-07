@@ -46,7 +46,7 @@ class AssetReservation extends Model
         $until = $this->reserved_until ?: $this->reserved_from;
         if (!$until) return null;
 
-        return \Carbon\Carbon::parse($until)->subHour();
+        return \Carbon\Carbon::parse($until)->subMinute();
     }
     /** Is this reservation currently in its active window (today between from & until)? */
     public function isCurrentWindow(): bool

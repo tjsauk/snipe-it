@@ -9,6 +9,8 @@
 {{-- Account page content --}}
 @section('content')
 
+@include('partials.welcome-banner')
+
 @if ($acceptanceQuantity = \App\Models\CheckoutAcceptance::forUser(Auth::user())->pending()->sum('qty'))
   <div class="row">
     <div class="col-md-12">
@@ -907,28 +909,7 @@
                     </td>
 
                     <td class="hidden-print">
-                      {{-- Checkout / Checkin buttons (same routes you found) --}}
-                      @if (($asset->assetstatus) && ($asset->assetstatus->deployable=='1'))
-                        @if (($asset->assigned_to != '') && ($asset->deleted_at==''))
-                          @can('checkin', $asset)
-                            <a href="{{ route('hardware.checkin.create', $asset->id) }}?return_to={{ urlencode($returnToReservations) }}"
-                              class="btn btn-sm btn-primary"
-                              style="margin-right: 5px;">
-                              {{ trans('admin/hardware/general.checkin') }}
-                            </a>
-                          @endcan
-                        @elseif (($asset->assigned_to == '') && ($asset->deleted_at==''))
-                          @can('checkout', $asset)
-                            <a href="{{ route('hardware.checkout.create', $asset->id) }}?return_to={{ urlencode($returnToReservations) }}"
-                              class="btn btn-sm bg-maroon"
-                              style="margin-right: 5px;">
-                              {{ trans('admin/hardware/general.checkout') }}
-                            </a>
-                          @endcan
-                        @endif
-                      @endif
-
-                      {{-- Cancel reservation (normal user) --}}
+                      {{-- Cancel reservation --}}
                       @if ($userReservation)
                         <form method="POST"
                               action="{{ route('hardware.reserve.destroy', [$asset->id, $userReservation->id]) }}"
@@ -936,20 +917,25 @@
                           @csrf
                           @method('DELETE')
                           <input type="hidden" name="return_to" value="{{ $returnToReservations }}">
-                          <button type="submit" class="btn btn-sm btn-default">
-                            Cancel
+                          <button type="submit" class="btn btn-sm btn-danger">
+                            <i class="fas fa-times"></i> Cancel
                           </button>
                         </form>
                       @endif
 
-                      {{-- Superuser manage reservations --}}
+                      {{-- Manage my reservation (placeholder for future edit functionality) --}}
+                      <button class="btn btn-sm btn-default" disabled title="Coming soon">
+                        <i class="fas fa-edit"></i> Manage my reservation
+                      </button>
+
+                      {{-- Superuser: manage all reservations for this asset --}}
                       @if ($currentUser && method_exists($currentUser, 'isSuperUser') && $currentUser->isSuperUser())
                         @php $activeReservationsCount = $asset->activeReservations()->count(); @endphp
                         @if ($activeReservationsCount > 0)
                           <a href="{{ route('hardware.reserve.manage', $asset->id) }}?return_to={{ urlencode($returnToReservations) }}"
                             class="btn btn-sm btn-default"
                             style="margin-left: 5px;">
-                            Manage reservations
+                            <i class="fas fa-list"></i> Manage reservations
                           </a>
                         @endif
                       @endif
@@ -973,7 +959,7 @@
                         foreach ($rAsset->activeReservations()->get() as $res) {
                             $periods[] = [
                                 'start'    => \Carbon\Carbon::parse($res->reserved_from)->format('Y-m-d H:i'),
-                                'end'      => \Carbon\Carbon::parse($res->reserved_until)->subHour()->format('Y-m-d H:i'),
+                                'end'      => \Carbon\Carbon::parse($res->reserved_until)->subMinute()->format('Y-m-d H:i'),
                                 'userName' => 'reservation',
                             ];
                         }

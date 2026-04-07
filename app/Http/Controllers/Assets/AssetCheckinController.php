@@ -166,10 +166,15 @@ class AssetCheckinController extends Controller
 
             event(new CheckoutableCheckedIn($asset, $target, auth()->user(), $request->input('note'), $checkin_at, $originalValues));
 
-            // If there's an active reservation whose window includes now, auto-checkout immediately
-            // so the reservation doesn't fire again lazily from show(), causing a double-checkin.
-            $asset->refresh();
-            $asset->autoCheckoutActiveReservationIfDue();
+            // Cancel any currently-active reservation window — the user is explicitly giving up the asset.
+            // Also cancel fulfilled ones (auto-checked-out) since the asset is being returned early.
+            $now = now();
+            $asset->reservations()
+                ->whereIn('status', ['active', 'fulfilled'])
+                ->where('reserved_from', '<=', $now)
+                ->where('reserved_until', '>', $now)
+                ->update(['status' => 'cancelled']);
+
             $returnTo = $request->input('return_to') ?: $request->query('return_to');
 
             if ($returnTo) {

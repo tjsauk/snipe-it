@@ -223,6 +223,10 @@ class AssetCheckoutController extends Controller
             // Normalize checkout target + required assigned_* fields
             $checkoutToType = $request->get('checkout_to_type', 'user');
 
+            // Update session immediately so that any early error redirect reloads
+            // the page with the correct checkout_to_type radio selected.
+            session()->put('checkout_to_type', $checkoutToType);
+
             // If user switched targets and came back, assigned_user may be missing because the input was disabled/hidden.
             // When checkout_to_type=user and no asset/location is provided, default to current user.
             if (
@@ -233,11 +237,6 @@ class AssetCheckoutController extends Controller
             ) {
                 $request->merge(['assigned_user' => auth()->id()]);
             }
-
-            
-
-            // Keep session in sync with the string type (NOT the $target object)
-            session()->put('checkout_to_type', $checkoutToType);
 
 
             // Only block availability for normal checkout
@@ -383,10 +382,7 @@ class AssetCheckoutController extends Controller
                 }
             }
 
-            session()->put([
-                'redirect_option' => $request->get('redirect_option'),
-                'checkout_to_type' => $request->get('checkout_to_type')
-            ]);
+            session()->put('redirect_option', $request->get('redirect_option'));
 
             /***************************************************************
              * RESERVATION FLOW
@@ -444,7 +440,8 @@ class AssetCheckoutController extends Controller
                     $pEndSlot = Carbon::parse($pi['end_date'], $tz)->setTime($pi['end_hour'], 0, 0);
                     $pEndDT   = $pEndSlot->copy()->addHour();
 
-                    if (!$pStartDT->isFuture()) {
+                    // Allow current hour (calendar hour precision): reject only if start is before current hour
+                    if ($pStartDT->lt(Carbon::now()->minute(0)->second(0))) {
                         $periodErrors[] = 'Period ' . ($idx + 1) . ': must start in the future.';
                         continue;
                     }
@@ -484,7 +481,7 @@ class AssetCheckoutController extends Controller
                     $log->created_by = auth()->id();
                     $log->target_type = \App\Models\User::class;
                     $log->target_id   = $reservationUserId;
-                    $period = $pStartDT->format('Y-m-d H:i') . ' – ' . $pEndDT->copy()->subHour()->format('Y-m-d H:i');
+                    $period = $pStartDT->format('Y-m-d H:i') . ' – ' . $pEndDT->copy()->subMinute()->format('Y-m-d H:i');
                     $userNote = $request->input('note', '');
                     $log->note = $period . "\x00" . $userNote;
                     $log->logaction('reserved');

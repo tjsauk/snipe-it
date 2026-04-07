@@ -47,7 +47,7 @@
                                     </td>
                                     <td>
                                         @if ($reservation->reserved_until)
-                                            {{ \App\Helpers\Helper::getFormattedDateObject($reservation->reserved_until, 'datetime', false) }}
+                                            {{ \App\Helpers\Helper::getFormattedDateObject($reservation->reserved_until_ui, 'datetime', false) }}
                                         @else
                                             —
                                         @endif

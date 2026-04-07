@@ -87,6 +87,7 @@ class AssetReservationController extends Controller
         $myCount = AssetReservation::where('asset_id', $asset->id)
             ->where('status', 'active')
             ->where('user_id', $user->id)
+            ->where('reserved_until', '>', now())
             ->count();
 
         if ($myCount < 2) {
@@ -97,6 +98,7 @@ class AssetReservationController extends Controller
         $reservations = AssetReservation::where('asset_id', $asset->id)
             ->where('status', 'active')
             ->where('user_id', $user->id)
+            ->where('reserved_until', '>', now())
             ->orderBy('reserved_from')
             ->get();
 

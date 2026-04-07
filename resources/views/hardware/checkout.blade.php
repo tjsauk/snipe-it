@@ -57,8 +57,8 @@
     </style>
 
     <div class="row">
-        <!-- left column -->
-        <div class="col-md-7">
+        <!-- left column — expands to col-md-12 when the calendar tab is active -->
+        <div class="col-md-7" id="checkout-left-col">
             <div class="box box-default">
                 @php
                     $storeRoute = route('hardware.reserve.store', $asset->id);
@@ -76,7 +76,7 @@
                     <div class="nav-tabs-custom" style="margin-bottom: 0;">
                         <ul class="nav nav-tabs">
                             <li class="active"><a href="#reserve-details" data-toggle="tab">Details</a></li>
-                            <li id="calendar-tab-li"><a href="#reserve-calendar" data-toggle="tab"><i class="fa fa-calendar"></i> Select dates</a></li>
+                            <li id="calendar-tab-li"@if($checkoutType === 'asset') style="display:none;"@endif><a href="#reserve-calendar" data-toggle="tab"><i class="fa fa-calendar"></i> Select dates</a></li>
                         </ul>
                         <div class="tab-content">
 
@@ -292,12 +292,13 @@
                         {{-- Shown when checkout_to_type = asset (no dates needed) --}}
                         <button id="btn-submit-asset" type="submit"
                             class="btn btn-warning{{ (!$asset->model ? ' disabled' : '') }}"
-                            style="display:none;">
+                            style="{{ $checkoutType === 'asset' ? '' : 'display:none;' }}">
                             <i class="fa fa-check"></i> {{ trans('general.checkout') }}
                         </button>
                         {{-- Shown for user/location (needs calendar) --}}
                         <a id="btn-open-calendar" href="#reserve-calendar" data-toggle="tab"
-                            class="btn btn-warning{{ (!$asset->model ? ' disabled' : '') }}">
+                            class="btn btn-warning{{ (!$asset->model ? ' disabled' : '') }}"
+                            style="{{ $checkoutType === 'asset' ? 'display:none;' : '' }}">
                             <i class="fa fa-calendar"></i> {{ trans('general.checkout') }}
                         </a>
                     </div>
@@ -410,9 +411,16 @@
         const isSelfOnly = {{ $onlySelfCheckout ? 'true' : 'false' }};
         const selfUserId = {{ (int)($authUser?->id ?? 0) }};
 
+        // Bootstrap 3 data-toggle="buttons" sets input.checked programmatically,
+        // which does NOT fire native change events. Read the active label as fallback.
         function checkoutType() {
+            // Primary: native checked state
+            const checked = form?.querySelector('input[name="checkout_to_type"]:checked')?.value;
+            if (checked) return checked;
+            // Fallback: Bootstrap 3 active label
+            const activeInput = form?.querySelector('[data-toggle="buttons"] label.active input[name="checkout_to_type"]');
+            if (activeInput) return activeInput.value;
             return (
-                form?.querySelector('input[name="checkout_to_type"]:checked')?.value ||
                 form?.querySelector('select[name="checkout_to_type"]')?.value ||
                 form?.querySelector('input[name="checkout_to_type"][type="hidden"]')?.value ||
                 'user'
@@ -440,61 +448,105 @@
         const btnOpenCalendar = document.getElementById('btn-open-calendar');
         const calendarTabLi   = document.getElementById('calendar-tab-li');
 
-        function clearCheckoutValues() {
-            // Clear checkout values when switching to different type
-            const assignedUser = form?.querySelector('input[name="assigned_user"]');
-            const assignedAsset = form?.querySelector('input[name="assigned_asset"]');
-            const assignedLocation = form?.querySelector('input[name="assigned_location"]');
-            const assignedUserSelect = form?.querySelector('select[name="assigned_user"]');
-            const assignedAssetSelect = form?.querySelector('select[name="assigned_asset"]');
-            const assignedLocationSelect = form?.querySelector('select[name="assigned_location"]');
-            
-            // Clear all checkout target fields
-            if (assignedUser) assignedUser.value = '';
-            if (assignedAsset) assignedAsset.value = '';
-            if (assignedLocation) assignedLocation.value = '';
-            if (assignedUserSelect) assignedUserSelect.value = '';
-            if (assignedAssetSelect) assignedAssetSelect.value = '';
-            if (assignedLocationSelect) assignedLocationSelect.value = '';
-            
-            // Clear date fields
-            document.getElementById('checkout_at').value = '';
-            document.getElementById('checkout_hour').value = '';
-            document.getElementById('expected_checkin').value = '';
-            document.getElementById('expected_checkin_hour').value = '';
-            document.getElementById('periods_json').value = '';
+        // Disable hidden target fields before submit so they are not sent to the server.
+        // This prevents leftover asset/location values from interfering when type=user.
+        function disableHiddenTargetFields() {
+            const t = checkoutType();
+            ['assigned_user', 'assigned_asset', 'assigned_location'].forEach(function(name) {
+                form?.querySelectorAll('[name="' + name + '"]').forEach(function(el) {
+                    el.disabled = (name !== 'assigned_' + t);
+                });
+            });
+            // Self-checkout hidden input must never be disabled
+            const selfInput = form?.querySelector('#self_assigned_user');
+            if (selfInput && t === 'user') selfInput.disabled = false;
         }
 
-        function updateCheckoutButtons() {
+        function clearTargetField(name) {
+            form?.querySelectorAll('select[name="' + name + '"]').forEach(function(el) {
+                if (window.jQuery && jQuery(el).data('select2')) {
+                    jQuery(el).val(null).trigger('change');
+                } else {
+                    el.value = '';
+                }
+            });
+            form?.querySelectorAll('input[name="' + name + '"]').forEach(function(el) {
+                if (el.id !== 'self_assigned_user') el.value = '';
+            });
+        }
+
+        function clearDateFields() {
+            ['checkout_at','checkout_hour','expected_checkin','expected_checkin_hour','periods_json'].forEach(function(id) {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
+        }
+
+        const leftCol = document.getElementById('checkout-left-col');
+
+        function setCalendarWide(wide) {
+            if (!leftCol) return;
+            if (wide) {
+                leftCol.classList.remove('col-md-7');
+                leftCol.classList.add('col-md-12');
+            } else {
+                leftCol.classList.remove('col-md-12');
+                leftCol.classList.add('col-md-7');
+            }
+        }
+
+        // Only update button/tab visibility — never clears values
+        function updateCheckoutVisibility() {
             const t = checkoutType();
             const isAsset = (t === 'asset');
-            const isLocation = (t === 'location');
-            const isUser = (t === 'user');
-            
-            // Clear values when switching types
-            clearCheckoutValues();
-            
             if (btnSubmitAsset)  btnSubmitAsset.style.display  = isAsset ? '' : 'none';
             if (btnOpenCalendar) btnOpenCalendar.style.display = isAsset ? 'none' : '';
-            // Hide "Select dates" tab nav item for asset checkout
-            if (calendarTabLi) calendarTabLi.style.display = isAsset ? 'none' : '';
+            if (calendarTabLi)   calendarTabLi.style.display   = isAsset ? 'none' : '';
+
+            // If calendar tab is hidden but still active, switch back to Details tab
+            if (isAsset && window.jQuery) {
+                jQuery('a[href="#reserve-details"]').tab('show');
+                setCalendarWide(false);
+            }
         }
 
-        setTimeout(updateCheckoutButtons, 0);
+        // Expand to full width when calendar tab is shown, shrink back on Details tab
+        if (window.jQuery) {
+            jQuery('a[href="#reserve-calendar"]').on('shown.bs.tab', function() { setCalendarWide(true); });
+            jQuery('a[href="#reserve-details"]').on('shown.bs.tab',  function() { setCalendarWide(false); });
+        }
 
-        document.addEventListener('change', function(e) {
-            if (!e.target) return;
-            if (
-                e.target.matches('input[name="checkout_to_type"]') ||
-                e.target.matches('select[name="checkout_to_type"]')
-            ) {
-                setTimeout(enforceSelfCheckout, 0);
-                setTimeout(updateCheckoutButtons, 0);
-            }
+        // On type switch: clear only the fields that are no longer relevant, then update visibility
+        function onCheckoutTypeChange() {
+            const t = checkoutType();
+            // Clear the two target fields that are now irrelevant
+            ['assigned_user', 'assigned_asset', 'assigned_location'].forEach(function(name) {
+                if (name !== 'assigned_' + t) clearTargetField(name);
+            });
+            clearDateFields();
+            updateCheckoutVisibility();
+            enforceSelfCheckout();
+        }
+
+        // Initial page load: only update visibility, never clear existing values
+        setTimeout(updateCheckoutVisibility, 0);
+
+        // Bootstrap 3 button groups fire click on the <label>, not change on the <input>.
+        // Attach directly to every label in the checkout_to_type button group.
+        form?.querySelectorAll('[data-toggle="buttons"] label').forEach(function(label) {
+            label.addEventListener('click', function() {
+                // Delay so Bootstrap has time to set input.checked and add .active class
+                setTimeout(onCheckoutTypeChange, 50);
+            });
+        });
+        // Also handle plain selects/radios outside button groups (fallback)
+        form?.querySelectorAll('select[name="checkout_to_type"]').forEach(function(el) {
+            el.addEventListener('change', function() { setTimeout(onCheckoutTypeChange, 0); });
         });
 
         form?.addEventListener('submit', function() {
             enforceSelfCheckout();
+            disableHiddenTargetFields();
         });
     });
     </script>

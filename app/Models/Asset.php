@@ -150,11 +150,11 @@ class Asset extends Depreciable
             return Carbon::parse($dt)->minute(0)->second(0);
         };
 
-        // DB end is a boundary (exclusive). UI expects "last occupied hour start".
-        // Example: DB end 12:00 means last occupied hour is 11:00.
+        // DB end is a boundary (exclusive). UI expects last occupied minute.
+        // Example: DB end 16:00 means last occupied minute is 15:59.
         $boundaryEndToUiLastHour = function ($dt) use ($toHourStart) {
             if (!$dt) return null;
-            return $toHourStart(Carbon::parse($dt)->subHour());
+            return Carbon::parse($dt)->subMinute();
         };
 
         // -------------------------
@@ -189,7 +189,7 @@ class Asset extends Depreciable
             // but still return UI "last occupied hour start" = 23:00.
             $until = Carbon::parse($untilRaw);
             if (strlen((string) $untilRaw) <= 10) { // "YYYY-MM-DD"
-                $until = $until->endOfDay()->addSecond(); 
+                $until = $until->endOfDay()->addSecond();
                 // endOfDay is 23:59:59; addSecond makes it 24:00 boundary
             }
 
@@ -379,8 +379,8 @@ class Asset extends Depreciable
             return null;
         }
 
-        // DB stores boundary end; UI shows last occupied hour
-        return \Carbon\Carbon::parse($this->expected_checkin)->subHour();
+        // DB stores boundary end; UI shows last occupied minute
+        return \Carbon\Carbon::parse($this->expected_checkin)->subMinute();
     }
 
     public function getDisplayNameAttribute()
