@@ -1603,7 +1603,7 @@
                         @if(isset($sidebar_quicklink_cats['Equipment']))
                         <li{!! (request()->is('categories/'.$sidebar_quicklink_cats['Equipment']->id) ? ' class="active"' : '') !!}>
                             <a href="{{ route('categories.show', $sidebar_quicklink_cats['Equipment']->id) }}">
-                                <x-icon type="categories" class="fa-fw"/>
+                                <x-icon type="equipment" class="fa-fw"/>
                                 <span>Equipment</span>
                             </a>
                         </li>
@@ -1611,9 +1611,27 @@
                         @if(isset($sidebar_quicklink_cats['Facilities']))
                         <li{!! (request()->is('categories/'.$sidebar_quicklink_cats['Facilities']->id) ? ' class="active"' : '') !!}>
                             <a href="{{ route('categories.show', $sidebar_quicklink_cats['Facilities']->id) }}">
-                                <x-icon type="categories" class="fa-fw"/>
+                                <x-icon type="facilities" class="fa-fw"/>
                                 <span>Facilities</span>
                             </a>
+                        </li>
+                        @endif
+
+                        @php($helpPdfUrl = \App\Helpers\Helper::helpPdfUrl())
+                        @if($helpPdfUrl || (Auth::check() && Auth::user()->isSuperUser()))
+                        <li class="header"></li>
+                        <li{!! (request()->is('admin/help-pdf') ? ' class="active"' : '') !!}>
+                            @if($helpPdfUrl)
+                                <a href="{{ $helpPdfUrl }}" target="_blank" rel="noopener">
+                                    <x-icon type="help" class="fa-fw"/>
+                                    <span>Help</span>
+                                </a>
+                            @else
+                                <a href="{{ route('settings.help-pdf.index') }}">
+                                    <x-icon type="help" class="fa-fw"/>
+                                    <span>Help</span>
+                                </a>
+                            @endif
                         </li>
                         @endif
                     </ul>

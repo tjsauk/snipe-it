@@ -165,6 +165,11 @@ class AssetCheckinController extends Controller
         if ($asset->save()) {
 
             event(new CheckoutableCheckedIn($asset, $target, auth()->user(), $request->input('note'), $checkin_at, $originalValues));
+
+            // If there's an active reservation whose window includes now, auto-checkout immediately
+            // so the reservation doesn't fire again lazily from show(), causing a double-checkin.
+            $asset->refresh();
+            $asset->autoCheckoutActiveReservationIfDue();
             $returnTo = $request->input('return_to') ?: $request->query('return_to');
 
             if ($returnTo) {

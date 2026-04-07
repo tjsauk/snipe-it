@@ -119,6 +119,16 @@ class Helper
         return null;
     }
 
+    public static function helpPdfUrl(): ?string
+    {
+        $path = public_path('help/help.pdf');
+        if (file_exists($path)) {
+            return asset('help/help.pdf');
+        }
+
+        return null;
+    }
+
 
     /**
      * The importer has formatted number strings since v3,

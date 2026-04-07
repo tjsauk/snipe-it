@@ -32,6 +32,7 @@ use App\Models\ReportTemplate;
 use Illuminate\Support\Facades\Route;
 use Tabuna\Breadcrumbs\Trail;
 use App\Http\Controllers\Assets\AssetsController;
+use App\Http\Controllers\HelpPdfController;
 
 
 Route::group(['middleware' => 'auth'], function () {
@@ -315,6 +316,11 @@ Route::group(['prefix' => 'admin', 'middleware' => ['auth', 'authorize:superuser
 
     Route::resource('groups', GroupsController::class);
 
+    Route::prefix('help-pdf')->group(function () {
+        Route::get('/', [HelpPdfController::class, 'index'])->name('settings.help-pdf.index');
+        Route::post('/upload', [HelpPdfController::class, 'upload'])->name('settings.help-pdf.upload');
+        Route::delete('/destroy', [HelpPdfController::class, 'destroy'])->name('settings.help-pdf.destroy');
+    });
 
     /**
      * This breadcrumb is repeated for groups in the BreadcrumbServiceProvider, since groups uses resource routes

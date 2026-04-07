@@ -204,6 +204,12 @@ class IconHelper
             case 'categories':
             case 'category':
                 return 'fa-solid fa-layer-group';
+            case 'equipment':
+                return 'fas fa-tools';
+            case 'facilities':
+                return 'fa-solid fa-building';
+            case 'help':
+                return 'fa-solid fa-circle-question';
         }
     }
 }
