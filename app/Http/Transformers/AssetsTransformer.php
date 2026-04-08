@@ -262,17 +262,13 @@ class AssetsTransformer
             $isSuper = method_exists($currentUser, 'isSuperUser') && $currentUser->isSuperUser();
 
             if ($userReservation && ! $isSuper) {
-                // Normal user: cancel own reservation
-                $cancelUrl = route('hardware.reserve.destroy', [$asset->id, $userReservation->id]);
-                $cancelHtml = '<form method="POST" action="'.$cancelUrl.'" style="display:inline;">'
-                    .csrf_field()
-                    .method_field('DELETE')
-                    .'<button type="submit" class="btn btn-xs btn-default">Cancel</button>'
-                    .'</form>';
+                // Normal user with reservation: Manage button leading to manage page
+                $manageUrl  = route('hardware.reserve.manage', $asset->id);
+                $manageHtml = '<a href="'.$manageUrl.'" class="btn btn-xs btn-default"><i class="fa fa-calendar-times-o"></i> Manage</a>';
             } elseif ($isSuper && $hasReservations) {
                 // Superuser: one "Manage" button
                 $manageUrl  = route('hardware.reserve.manage', $asset->id);
-                $manageHtml = '<a href="'.$manageUrl.'" class="btn btn-xs btn-default">Manage</a>';
+                $manageHtml = '<a href="'.$manageUrl.'" class="btn btn-xs btn-default"><i class="fa fa-calendar-times-o"></i> Manage</a>';
             }
         }
 

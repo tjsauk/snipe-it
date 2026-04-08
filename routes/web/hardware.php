@@ -131,8 +131,14 @@ Route::group(
         Route::delete('{asset}/reservations/{reservation}', [AssetReservationController::class, 'destroy'])
             ->name('hardware.reserve.destroy');
 
-        // Show reservation management page for an asset (superuser only)
-        Route::get('hardware/{asset}/reservations/manage', [AssetReservationController::class, 'manage'])
+        // Edit reservation
+        Route::get('{asset}/reservations/{reservation}/edit', [AssetReservationController::class, 'edit'])
+            ->name('hardware.reserve.edit');
+        Route::put('{asset}/reservations/{reservation}', [AssetReservationController::class, 'update'])
+            ->name('hardware.reserve.update');
+
+        // Show reservation management page for an asset
+        Route::get('{asset}/reservations/manage', [AssetReservationController::class, 'manage'])
             ->name('hardware.reserve.manage');
 
         Route::get('{asset}/checkin/{backto?}',

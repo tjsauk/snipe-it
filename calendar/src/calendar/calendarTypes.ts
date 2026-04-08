@@ -10,6 +10,8 @@ export type ExistingReservation = {
   start: string;
   end: string;
   userName: string;
+  color?: string;
+  noBlock?: boolean;  // If true, shown visually but never blocks selection/dragging
 };
 
 export type Asset = {

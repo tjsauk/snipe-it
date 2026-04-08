@@ -447,7 +447,7 @@
 
             <div class="nav-tabs-custom" style="margin: 10px; box-shadow: none;">
               <ul class="nav nav-tabs">
-                <li class="active"><a href="#assets-list" data-toggle="tab">{{ trans('general.list') }}</a></li>
+                <li class="active"><a href="#assets-list" data-toggle="tab"><i class="fa fa-bars"></i> List</a></li>
                 <li><a href="#assets-calendar" data-toggle="tab" id="profile-assets-calendar-tab"><i class="fa fa-calendar"></i> Calendar</a></li>
               </ul>
               <div class="tab-content">
@@ -634,38 +634,19 @@
                               $userReservation = $userId ? $asset->activeReservationForUser($selectedUserId) : null;
                           @endphp
 
-                          {{-- Reserve --}}
-                          @if (($asset->assetstatus) && ($asset->assetstatus->deployable=='1') && ($asset->deleted_at=='') )
-                            <a href="{{ route('hardware.reserve.create', $asset->id) }}?reserve=1&return_to={{ urlencode($returnToAssets) }}"
-                              class="btn btn-sm btn-warning"
-                              style="margin-right: 5px;">
-                              Reserve
-                            </a>
-                          @endif
-
-                          {{-- Cancel (normal user cancels their own reservation) --}}
-                          @if ($userReservation)
-                            <form method="POST"
-                                  action="{{ route('hardware.reserve.destroy', [$asset->id, $userReservation->id]) }}"
-                                  style="display:inline;">
-                              @csrf
-                              @method('DELETE')
-                              <input type="hidden" name="return_to" value="{{ $returnToAssets }}">
-                              <button type="submit" class="btn btn-sm btn-default">
-                                Cancel
-                              </button>
-                            </form>
-                          @endif
-
-                          {{-- Superuser manage reservations --}}
+                          {{-- Manage / cancel reservations --}}
                           @if ($currentUser && method_exists($currentUser, 'isSuperUser') && $currentUser->isSuperUser())
                             @if ($asset->activeReservations()->exists())
                               <a href="{{ route('hardware.reserve.manage', $asset->id) }}?return_to={{ urlencode($returnToAssets) }}"
-                                class="btn btn-sm btn-default"
-                                style="margin-left: 5px;">
-                                Manage reservations
+                                class="btn btn-sm btn-warning">
+                                <i class="fa fa-calendar-times-o"></i> Manage reservations
                               </a>
                             @endif
+                          @elseif ($userReservation)
+                            <a href="{{ route('hardware.reserve.manage', $asset->id) }}?return_to={{ urlencode($returnToAssets) }}"
+                              class="btn btn-sm btn-warning">
+                              <i class="fa fa-calendar-times-o"></i> Manage my reservation
+                            </a>
                           @endif
 
                         </td>
@@ -739,13 +720,18 @@
                           </td>
                           <td class="hidden-print">
                             @if ($aNowReservation)
-                              <form method="POST"
-                                    action="{{ route('hardware.reserve.destroy', [$aNow->id, $aNowReservation->id]) }}"
-                                    style="display:inline;">
-                                @csrf @method('DELETE')
-                                <input type="hidden" name="return_to" value="{{ $returnToAssets }}">
-                                <button type="submit" class="btn btn-sm btn-default">Cancel</button>
-                              </form>
+                              @php $aNowIsSuper = $currentUser && method_exists($currentUser, 'isSuperUser') && $currentUser->isSuperUser(); @endphp
+                              @if ($aNowIsSuper)
+                                <a href="{{ route('hardware.reserve.manage', $aNow->id) }}?return_to={{ urlencode($returnToAssets) }}"
+                                   class="btn btn-sm btn-warning">
+                                  <i class="fa fa-calendar-times-o"></i> Manage reservations
+                                </a>
+                              @else
+                                <a href="{{ route('hardware.reserve.manage', $aNow->id) }}?return_to={{ urlencode($returnToAssets) }}"
+                                   class="btn btn-sm btn-warning">
+                                  <i class="fa fa-calendar-times-o"></i> Manage my reservation
+                                </a>
+                              @endif
                             @endif
                           </td>
                         </tr>
@@ -805,7 +791,7 @@
             {{-- Nested tabs: List | Calendar --}}
             <div class="nav-tabs-custom" style="margin: 10px; box-shadow: none;">
               <ul class="nav nav-tabs">
-                <li class="active"><a href="#reservations-list" data-toggle="tab">{{ trans('general.list') }}</a></li>
+                <li class="active"><a href="#reservations-list" data-toggle="tab"><i class="fa fa-bars"></i> List</a></li>
                 <li><a href="#reservations-calendar" data-toggle="tab" id="reservations-calendar-tab"><i class="fa fa-calendar"></i> Calendar</a></li>
               </ul>
               <div class="tab-content">
@@ -909,35 +895,20 @@
                     </td>
 
                     <td class="hidden-print">
-                      {{-- Cancel reservation --}}
-                      @if ($userReservation)
-                        <form method="POST"
-                              action="{{ route('hardware.reserve.destroy', [$asset->id, $userReservation->id]) }}"
-                              style="display:inline;">
-                          @csrf
-                          @method('DELETE')
-                          <input type="hidden" name="return_to" value="{{ $returnToReservations }}">
-                          <button type="submit" class="btn btn-sm btn-danger">
-                            <i class="fas fa-times"></i> Cancel
-                          </button>
-                        </form>
-                      @endif
-
-                      {{-- Manage my reservation (placeholder for future edit functionality) --}}
-                      <button class="btn btn-sm btn-default" disabled title="Coming soon">
-                        <i class="fas fa-edit"></i> Manage my reservation
-                      </button>
-
-                      {{-- Superuser: manage all reservations for this asset --}}
+                      {{-- Manage reservations --}}
                       @if ($currentUser && method_exists($currentUser, 'isSuperUser') && $currentUser->isSuperUser())
                         @php $activeReservationsCount = $asset->activeReservations()->count(); @endphp
                         @if ($activeReservationsCount > 0)
                           <a href="{{ route('hardware.reserve.manage', $asset->id) }}?return_to={{ urlencode($returnToReservations) }}"
-                            class="btn btn-sm btn-default"
-                            style="margin-left: 5px;">
+                            class="btn btn-sm btn-warning">
                             <i class="fas fa-list"></i> Manage reservations
                           </a>
                         @endif
+                      @elseif ($userReservation)
+                        <a href="{{ route('hardware.reserve.manage', $asset->id) }}?return_to={{ urlencode($returnToReservations) }}"
+                          class="btn btn-sm btn-warning">
+                          <i class="fas fa-edit"></i> Manage my reservation
+                        </a>
                       @endif
 
                     </td>

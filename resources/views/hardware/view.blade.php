@@ -1,4 +1,4 @@
-@extends('layouts/default')
+﻿@extends('layouts/default')
 
 {{-- Page title --}}
 @section('title')
@@ -263,13 +263,13 @@
 
                                 @if (($asset->assetstatus) && ($asset->assetstatus->deployable=='1') && ($asset->deleted_at==''))
                                     {{-- Reserve: reuse checkout form in reservation mode --}}
-                                    
-                                    <a href="{{ route('hardware.reserve.create', ['asset' => $asset->id, 'reserve' => 1, 'return_to' => url()->full()]) }}"
-                                    class="btn btn-sm btn-warning btn-social btn-block hidden-print{{ ((!$asset->model) ? ' disabled' : '') }}">
-                                        <i class="fa fa-calendar-plus-o"></i>
-                                        Reserve
-                                    </a>
-                                    
+                                    <div class="col-md-12 hidden-print" style="padding-top: 5px;">
+                                        <a href="{{ route('hardware.reserve.create', ['asset' => $asset->id, 'reserve' => 1, 'return_to' => url()->full()]) }}"
+                                        class="btn btn-sm btn-warning btn-social btn-block hidden-print{{ ((!$asset->model) ? ' disabled' : '') }}">
+                                            <i class="fa fa-calendar-plus-o"></i>
+                                            Reserve
+                                        </a>
+                                    </div>
                                 @endif
 
                                 
@@ -283,11 +283,12 @@
                                     // Your existing helper (returns ONE active reservation for this user+asset)
                                     $userReservation = $userId ? $asset->activeReservationForUser($userId) : null;
 
-                                    // NEW: count how many active reservations THIS user has for THIS asset
+                                    // Count future active reservations for this user+asset (matches controller logic)
                                     $myActiveReservationCount = $userId
                                         ? \App\Models\AssetReservation::where('asset_id', $asset->id)
                                             ->where('status', 'active')
                                             ->where('user_id', $userId)
+                                            ->where('reserved_until', '>', now())
                                             ->count()
                                         : 0;
 
@@ -300,37 +301,25 @@
 
                                 @if ($isSuper)
                                     @if ($activeReservationsCount > 0)
-                                        <a href="{{ route('hardware.reserve.manage', ['asset' => $asset->id, 'return_to' => $returnTo]) }}"
-                                        class="btn btn-sm btn-default btn-social btn-block hidden-print"
-                                        style="margin-top: 5px;">
-                                            <i class="fa fa-calendar-times-o"></i>
-                                            Manage reservations
-                                        </a>
+                                        <div class="col-md-12 hidden-print" style="padding-top: 5px;">
+                                            <a href="{{ url('hardware/' . $asset->id . '/reservations/manage') }}"
+                                               class="btn btn-sm btn-default btn-block hidden-print">
+                                                <i class="fa fa-calendar-times-o"></i>
+                                                Manage reservations
+                                            </a>
+                                        </div>
                                     @endif
 
                                 @else
-                                    {{-- Normal user: if they have 2+ reservations, show Manage --}}
-                                    @if ($myActiveReservationCount >= 2)
-                                        <a href="{{ route('hardware.reserve.manage', ['asset' => $asset->id, 'return_to' => $returnTo]) }}"
-                                        class="btn btn-sm btn-default btn-social btn-block hidden-print"
-                                        style="margin-top: 5px;">
-                                            <i class="fa fa-calendar-times-o"></i>
-                                            Manage my reservations
-                                        </a>
-
-                                    {{-- Normal user: if they have exactly 1 reservation, keep single “cancel my reservation” button --}}
-                                    @elseif ($userReservation)
-                                        <form method="POST"
-                                            action="{{ route('hardware.reserve.destroy', [$asset->id, $userReservation->id]) }}"
-                                            style="margin-top: 5px;">
-                                            @csrf
-                                            @method('DELETE')
-                                            <input type="hidden" name="return_to" value="{{ $returnTo }}">
-                                            <button type="submit" class="btn btn-sm btn-default btn-social btn-block hidden-print">
-                                                <i class="fa fa-times"></i>
-                                                Cancel my reservation
-                                            </button>
-                                        </form>
+                                    {{-- Normal user: if they have any future active reservation, show Manage --}}
+                                    @if ($myActiveReservationCount >= 1)
+                                        <div class="col-md-12 hidden-print" style="padding-top: 5px;">
+                                            <a href="{{ url('hardware/' . $asset->id . '/reservations/manage') }}"
+                                               class="btn btn-sm btn-default btn-block hidden-print">
+                                                <i class="fa fa-calendar-times-o"></i>
+                                                Manage my reservation{{ $myActiveReservationCount > 1 ? 's' : '' }}
+                                            </a>
+                                        </div>
                                     @endif
                                 @endif
 

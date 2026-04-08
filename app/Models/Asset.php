@@ -141,7 +141,7 @@ class Asset extends Depreciable
      *
      */
     
-    public function calendarBlockedRanges(): array
+    public function calendarBlockedRanges(?int $excludeReservationId = null): array
     {
         $ranges = [];
 
@@ -180,7 +180,11 @@ class Asset extends Depreciable
         // -------------------------
         // Active reservations
         // -------------------------
-        foreach ($this->activeReservations()->get() as $res) {
+        $reservationsQuery = $this->activeReservations();
+        if ($excludeReservationId !== null) {
+            $reservationsQuery->where('id', '!=', $excludeReservationId);
+        }
+        foreach ($reservationsQuery->get() as $res) {
             $from = $toHourStart($res->reserved_from);
 
             $untilRaw = $res->reserved_until ?? $res->reserved_from;
@@ -631,7 +635,7 @@ class Asset extends Depreciable
      *
      * Optionally exclude reservations for a specific user (e.g. allow overlap with their own reservation).
      */
-    public function overlapsReservations($from, $until, ?int $excludeUserId = null): bool
+    public function overlapsReservations($from, $until, ?int $excludeUserId = null, ?int $excludeReservationId = null): bool
     {
         $from  = Carbon::parse($from);
         $until = Carbon::parse($until);
@@ -640,6 +644,10 @@ class Asset extends Depreciable
 
         if ($excludeUserId !== null) {
             $query->where('user_id', '!=', $excludeUserId);
+        }
+
+        if ($excludeReservationId !== null) {
+            $query->where('id', '!=', $excludeReservationId);
         }
 
         // Overlap test:

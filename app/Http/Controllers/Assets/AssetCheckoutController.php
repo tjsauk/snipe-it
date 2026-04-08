@@ -322,9 +322,9 @@ class AssetCheckoutController extends Controller
                 return back()->withInput()->with('error', 'Checkout time cannot be in the future. Use a reservation instead.');
             }
 
-            // Reservation must start in the future (hour-accurate)
-            if ($reserveMode && !$checkoutDT->isFuture()) {
-                return back()->withInput()->with('error', 'Reservations must start in the future.');
+            // Reservation start must be the current hour or later (allow e.g. 11:00 when it's 11:23)
+            if ($reserveMode && $checkoutDT->lt(Carbon::now($tz)->startOfHour())) {
+                return back()->withInput()->with('error', 'Reservations must start in the current hour or later.');
             }
 
             // Expected must be > start (only if we have an expected end)

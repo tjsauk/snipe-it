@@ -202,8 +202,8 @@ export function buildPeriodsForAsset(
   currentUser: string,
   continuousCutMode: boolean,
 ): TimePeriod[] {
-  const blockers = existing.filter((r) => r.userName !== currentUser);
-  const own = existing.filter((r) => r.userName === currentUser);
+  const blockers = existing.filter((r) => !r.noBlock && r.userName !== currentUser);
+  const own = existing.filter((r) => !r.noBlock && r.userName === currentUser);
 
   const basePeriods = continuousCutMode
     ? buildContinuousUntilFirstBlock(wanted, blockers)
@@ -224,6 +224,7 @@ export function blockerOverlapExists(
   const ws = parseDateTime(wanted.start);
   const we = endToExclusive(wanted.end);
   return existing.some((r) => {
+    if (r.noBlock) return false;
     if (r.userName === currentUser) return false;
     const rs = parseDateTime(r.start);
     const re = endToExclusive(r.end);

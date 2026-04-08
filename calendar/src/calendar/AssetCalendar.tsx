@@ -669,7 +669,8 @@ export default function AssetCalendar({
           id: `existing-${group.groupKey}-${partIndex}`,
           type: 'existing', dayIndex: rect.dayIndex, start: rect.start, end: rect.end,
           top: rect.top, height: rect.height,
-          color: mode === 'view' ? (group.entries[0].asset.color ?? '#9ca3af') : '#9ca3af',
+          color: group.entries[0].reservation.color
+            ?? (mode === 'view' ? (group.entries[0].asset.color ?? '#9ca3af') : '#9ca3af'),
           label, tooltip, sortEnd: rect.end.getTime(), showWarning: overlapsActive,
         });
       });

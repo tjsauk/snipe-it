@@ -81,7 +81,7 @@ trait Loggable
             if ($asset = Asset::find($log->item_id)) {
 
                 // add the custom fields that were changed
-                if ($asset->model->fieldset) {
+                if ($asset->model && $asset->model->fieldset) {
                     $fields_array = [];
                     foreach ($asset->model->fieldset->fields as $field) {
                         if ($field->display_checkout == 1) {
@@ -169,7 +169,7 @@ trait Loggable
                     $asset->increment('checkin_counter', 1);
 
                     // add the custom fields that were changed
-                    if ($asset->model->fieldset) {
+                    if ($asset->model && $asset->model->fieldset) {
                         $fields_array = [];
                         foreach ($asset->model->fieldset->fields as $field) {
                             if ($field->display_checkin == 1) {
