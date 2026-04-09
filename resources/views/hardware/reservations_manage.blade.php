@@ -50,6 +50,9 @@
                                         {{ optional($reservation->user)->present()->fullName
                                             ?? optional($reservation->user)->email
                                             ?? ('User #'.$reservation->user_id) }}
+                                        @if ($reservation->status === 'fulfilled')
+                                            <span class="label label-success" style="margin-left:4px;">Active</span>
+                                        @endif
                                     </td>
                                     <td>
                                         {{ \App\Helpers\Helper::getFormattedDateObject($reservation->reserved_from, 'datetime', false) }}
@@ -66,6 +69,7 @@
                                            class="btn btn-xs btn-primary" style="margin-right: 4px;">
                                             <i class="fa fa-pencil"></i> Edit
                                         </a>
+                                        @if ($reservation->status !== 'fulfilled')
                                         <form method="POST"
                                               action="{{ route('hardware.reserve.destroy', [$asset, $reservation]) }}"
                                               style="display:inline-block;">
@@ -78,6 +82,7 @@
                                                 <i class="fa fa-ban"></i> Cancel
                                             </button>
                                         </form>
+                                        @endif
                                     </td>
                                 </tr>
                             @endforeach

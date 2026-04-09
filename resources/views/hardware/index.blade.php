@@ -56,7 +56,7 @@
 
         <div class="nav-tabs-custom" style="margin-bottom: 0; box-shadow: none;">
           <ul class="nav nav-tabs">
-            <li class="active"><a href="#assets-list-tab" data-toggle="tab">{{ trans('general.list') }}</a></li>
+            <li class="active"><a href="#assets-list-tab" data-toggle="tab"><i class="fa fa-bars"></i> List</a></li>
             <li><a href="#assets-calendar-tab" data-toggle="tab" id="assets-calendar-nav-tab"><i class="fa fa-calendar"></i> Calendar</a></li>
           </ul>
           <div class="tab-content">

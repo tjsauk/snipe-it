@@ -201,9 +201,10 @@ class Asset extends Depreciable
             $uiEnd = $boundaryEndToUiLastHour($until);
 
             $ranges[] = [
-                'from' => $from->format('Y-m-d H:i:s'),
-                'to'   => $uiEnd->format('Y-m-d H:i:s'),
-                'type' => 'reservation',
+                'from'    => $from->format('Y-m-d H:i:s'),
+                'to'      => $uiEnd->format('Y-m-d H:i:s'),
+                'type'    => 'reservation',
+                'user_id' => $res->user_id,
             ];
         }
 

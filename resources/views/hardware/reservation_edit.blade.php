@@ -84,7 +84,7 @@
                             </div>
                         </div>
 
-                        @if (!$can_change_start)
+                                        @if (!$can_change_start)
                             <div class="alert alert-info" style="margin: 0 15px 15px;">
                                 <i class="fa fa-info-circle"></i>
                                 This reservation has already started — only the end time can be changed.
@@ -96,8 +96,11 @@
                             <div class="col-md-10">
                                 <p class="form-control-static" id="selected-period-text">{{ $currentPeriodText }}</p>
                                 <p class="help-block" style="margin-top:4px;">
-                                    Select a new period in the calendar below, then click <strong>Confirm</strong> to save.<br>
-                                    The orange block shows the current reservation — you can drag over it to replace it.
+                                    @if ($can_change_start)
+                                        Drag the block to move it, or drag the bottom handle to extend/shorten. Click <strong>Confirm</strong> to save.
+                                    @else
+                                        Drag the bottom handle to extend the end time. Click <strong>Confirm</strong> to save.
+                                    @endif
                                 </p>
                             </div>
                         </div>
@@ -126,25 +129,31 @@
 @section('moar_scripts')
     @php
     // Blocked ranges from other reservations/checkouts — the editing reservation is excluded.
-    $calendarBlockedPeriods = collect($calendarRanges ?? [])->map(function($r) {
-        return [
+    $calendarBlockedPeriods = collect($calendarRanges ?? [])->map(function($r) use ($reservation) {
+        // Own user's other reservations are shown visually but must NOT block dragging
+        // (they will merge on save). Other users' / checkout blocks still block.
+        $isOwnUserReservation = isset($r['user_id']) && $r['user_id'] === $reservation->user_id;
+        $entry = [
             'start'    => \Carbon\Carbon::parse($r['from'])->format('Y-m-d H:i'),
             'end'      => $r['to'] ? \Carbon\Carbon::parse($r['to'])->format('Y-m-d H:i') : null,
             'userName' => (string)($r['type'] ?? 'blocked'),
         ];
+        if ($isOwnUserReservation) {
+            $entry['noBlock'] = true;
+        }
+        return $entry;
     })->values()->toArray();
 
-    // Orange block = the reservation being edited (visual reference, noBlock so user can drag over it).
-    // End = last occupied minute (boundary − 1 min), matching the format calendarBlockedRanges uses.
-    $orangeBlock = [
+    // The current reservation becomes the editable period (userName = currentUser).
+    // Blocked ranges from other reservations/checkouts are passed as-is.
+    // End stored as boundary - 1 min to match the UI convention.
+    $editablePeriod = [
         'start'    => $startDT->format('Y-m-d H:i'),
         'end'      => $endBoundary->copy()->subMinute()->format('Y-m-d H:i'),
-        'userName' => 'current_reservation',
-        'color'    => '#f97316',
-        'noBlock'  => true,
+        'userName' => optional(auth()->user())->username ?? (string) auth()->id(),
     ];
 
-    $allCalendarPeriods = array_merge($calendarBlockedPeriods, [$orangeBlock]);
+    $allCalendarPeriods = array_merge($calendarBlockedPeriods, [$editablePeriod]);
     @endphp
 
     <script>
@@ -153,8 +162,10 @@
     var lockedStartHour = @json($defaultStartHour);
 
     window.assetCalendarInput = {
-        mode: 'reserve',
+        mode: 'edit',
         currentUser: @json(optional(auth()->user())->username ?? (string) auth()->id()),
+        lockStart: !canChangeStart,
+        initialAnchorDate: @json($startDT->toDateString()),
         assets: [{
             id: @json((string)$asset->id),
             name: @json($asset->name ?? $asset->asset_tag),
@@ -163,11 +174,18 @@
     };
 
     // Called by the calendar's Confirm button.
-    // Updates hidden form fields with the selected period, then submits the form.
-    // If nothing was selected in the calendar, the pre-filled original values are kept.
+    // In edit mode the output is: output.assets[0].users[0].selectedPeriods
     window.assetCalendarOnConfirm = function(output) {
         var assetOutput = output && output.assets && output.assets[0];
-        var periods = (assetOutput && assetOutput.selectedPeriods) || [];
+        var periods = [];
+
+        if (assetOutput) {
+            if (assetOutput.users && assetOutput.users.length > 0) {
+                periods = assetOutput.users[0].selectedPeriods || [];
+            } else if (assetOutput.selectedPeriods) {
+                periods = assetOutput.selectedPeriods;
+            }
+        }
 
         if (periods.length > 0) {
             var primary    = periods[0];
@@ -186,6 +204,7 @@
             document.getElementById('expected_checkin').value      = endParts[0];
             document.getElementById('expected_checkin_hour').value = String(endHour);
 
+            // Additional periods = rest of selectedPeriods (user may have added via "Add" button)
             var additional = periods.slice(1);
             document.getElementById('periods_json').value = additional.length > 0
                 ? JSON.stringify(additional)

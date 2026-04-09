@@ -460,8 +460,51 @@ class AssetCheckoutController extends Controller
                             continue;
                         }
                     }
-                    if ($asset->overlapsReservations($pStartDT, $pEndDT)) {
+                    // Block overlap with other users' reservations
+                    if ($asset->overlapsReservations($pStartDT, $pEndDT, $reservationUserId)) {
                         $periodErrors[] = 'Period ' . ($idx + 1) . ': overlaps existing reservation.';
+                        continue;
+                    }
+
+                    // Check if new period is adjacent to or overlaps own existing reservation → merge
+                    $ownAdjacent = $asset->reservations()
+                        ->where('status', 'active')
+                        ->where('user_id', $reservationUserId)
+                        ->where(function ($q) use ($pStartDT, $pEndDT) {
+                            // Existing ends exactly where new starts (adjacent, boundary-to-boundary)
+                            $q->where('reserved_until', $pStartDT->format('Y-m-d H:i:s'))
+                              // New ends exactly where existing starts (adjacent, other direction)
+                              ->orWhere('reserved_from', $pEndDT->format('Y-m-d H:i:s'))
+                              // Overlapping
+                              ->orWhere(function ($q2) use ($pStartDT, $pEndDT) {
+                                  $q2->where('reserved_from', '<', $pEndDT->format('Y-m-d H:i:s'))
+                                     ->where('reserved_until', '>', $pStartDT->format('Y-m-d H:i:s'));
+                              });
+                        })
+                        ->first();
+
+                    if ($ownAdjacent) {
+                        // Merge: extend to the earliest start and latest end
+                        $mergedStart = min($pStartDT->timestamp, Carbon::parse($ownAdjacent->reserved_from)->timestamp) === $pStartDT->timestamp
+                            ? $pStartDT : Carbon::parse($ownAdjacent->reserved_from);
+                        $mergedEnd = Carbon::parse($ownAdjacent->reserved_until)->gt($pEndDT)
+                            ? Carbon::parse($ownAdjacent->reserved_until) : $pEndDT;
+                        $ownAdjacent->reserved_from  = $mergedStart->format('Y-m-d H:i:s');
+                        $ownAdjacent->reserved_until = $mergedEnd->format('Y-m-d H:i:s');
+                        $ownAdjacent->save();
+
+                        $period = $mergedStart->format('Y-m-d H:i') . ' – ' . $mergedEnd->copy()->subMinute()->format('Y-m-d H:i');
+                        $userNote = $request->input('note', '');
+                        $log = new \App\Models\Actionlog;
+                        $log->item_type   = \App\Models\Asset::class;
+                        $log->item_id     = $asset->id;
+                        $log->created_by  = auth()->id();
+                        $log->target_type = \App\Models\User::class;
+                        $log->target_id   = $reservationUserId;
+                        $log->note = $period . "\x00" . $userNote;
+                        $log->logaction('reserved');
+
+                        $successCount++;
                         continue;
                     }
 
@@ -524,7 +567,10 @@ class AssetCheckoutController extends Controller
                 $checkoutUserId = auth()->id();
             }
 
-            // Check if this checkout should fulfill the user's reservation (hour-accurate)
+            // Check if this checkout should merge with / fulfill the user's own reservation.
+            // Merge condition: checkout end boundary == reservation start (adjacent, 1-min UI gap)
+            // OR checkout overlaps the reservation window.
+            // When merged, extend expected_checkin to the reservation's end time.
             $userReservation = $checkoutUserId ? $asset->activeReservationForUser($checkoutUserId) : null;
             $fulfillReservation = false;
 
@@ -534,9 +580,17 @@ class AssetCheckoutController extends Controller
                     ? Carbon::parse($userReservation->reserved_until)
                     : $resFrom->copy();
 
-                $overlap = $checkoutStart <= $resUntil && $checkoutEnd >= $resFrom;
-                if ($overlap) {
+                // Adjacent: checkout boundary end == reservation start (e.g. both 14:00)
+                // Overlapping: checkout start < reservation end AND checkout end > reservation start
+                $adjacent = $checkoutEnd->eq($resFrom);
+                $overlapping = $checkoutStart < $resUntil && $checkoutEnd > $resFrom;
+
+                if ($adjacent || $overlapping) {
                     $fulfillReservation = true;
+                    // Extend the checkout window to cover the reservation period
+                    $checkoutEnd   = $resUntil->copy();
+                    $windowEndDT   = $resUntil->copy();
+                    $expected_checkin = $resUntil->format('Y-m-d H:i:s');
                 }
             }
 

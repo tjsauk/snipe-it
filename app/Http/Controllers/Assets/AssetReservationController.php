@@ -36,8 +36,11 @@ class AssetReservationController extends Controller
             abort(403);
         }
 
-        if ($reservation->status !== 'active') {
-            return back()->with('error', 'Only active reservations can be edited.');
+        // Allow editing active reservations, and fulfilled ones that are still within their window
+        $isEditableStatus = $reservation->status === 'active'
+            || ($reservation->status === 'fulfilled' && $reservation->reserved_until?->isFuture());
+        if (!$isEditableStatus) {
+            return back()->with('error', 'Only active or ongoing reservations can be edited.');
         }
 
         $returnTo = $request->input('return_to')
@@ -80,8 +83,10 @@ class AssetReservationController extends Controller
             abort(403);
         }
 
-        if ($reservation->status !== 'active') {
-            return back()->with('error', 'Only active reservations can be edited.');
+        $isEditableStatus = $reservation->status === 'active'
+            || ($reservation->status === 'fulfilled' && $reservation->reserved_until?->isFuture());
+        if (!$isEditableStatus) {
+            return back()->with('error', 'Only active or ongoing reservations can be edited.');
         }
 
         $returnTo = $request->input('return_to')
@@ -126,12 +131,20 @@ class AssetReservationController extends Controller
             return back()->withInput()->with('error', 'End time must be in the future.');
         }
 
-        // Conflict check: exclude this reservation itself
-        if ($asset->overlapsOngoingCheckout($newStart, $newEnd)) {
+        // If the asset is currently checked out to this reservation's user, the checkout IS this
+        // reservation — skip the checkout-overlap check (otherwise it always blocks).
+        $assetCheckedOutToReservationUser = !$canChangeStart
+            && $asset->assigned_to == $reservation->user_id;
+
+        // Conflict check: exclude this reservation itself and own user (own overlaps become merges)
+        if (!$assetCheckedOutToReservationUser && $asset->overlapsOngoingCheckout($newStart, $newEnd)) {
             return back()->withInput()->with('error', 'The new period overlaps an ongoing checkout.');
         }
 
-        if ($asset->overlapsReservations($newStart, $newEnd, null, $reservation->id)) {
+        // Own-user overlaps are allowed — they will be merged below.
+        // Only block overlaps with OTHER users' reservations.
+        if ($asset->overlapsReservations($newStart, $newEnd, $reservation->user_id, $reservation->id)) {
+            // overlapsReservations already excludes own user (user_id param), so this is a foreign overlap
             return back()->withInput()->with('error', 'The new period overlaps an existing reservation.');
         }
 
@@ -139,12 +152,19 @@ class AssetReservationController extends Controller
         $timesChanged = $reservation->reserved_from->ne($newStart) || $reservation->reserved_until->ne($newEnd);
 
         if ($timesChanged) {
-            // If the reservation has already started and the asset is checked out to the reservation's user,
-            // we must do a real checkin instead of just cancelling the reservation record.
-            $assetCheckedOutToReservationUser = !$reservation->isFutureWindow()
-                && $asset->assigned_to == $reservation->user_id;
+            // Already checked-out + fulfilled: just update reservation end and asset expected_checkin in-place
+            if ($assetCheckedOutToReservationUser && $reservation->status === 'fulfilled') {
+                $reservation->reserved_until = $newEnd->format('Y-m-d H:i:s');
+                $reservation->save();
+                $asset->expected_checkin = $newEnd->format('Y-m-d H:i:s');
+                $asset->save();
 
+                return redirect($returnTo)->with('success', 'Reservation extended successfully.');
+            }
+
+            // Active but already started (asset NOT checked out to user): cancel + recreate
             if ($assetCheckedOutToReservationUser) {
+                // Checked out but status not fulfilled — do a real checkin
                 $target = $asset->assignedTo;
                 $originalValues = $asset->getRawOriginal();
 
@@ -173,14 +193,37 @@ class AssetReservationController extends Controller
 
             $reservation->save();
 
-            // Create a new reservation with updated times
-            AssetReservation::create([
-                'asset_id'       => $asset->id,
-                'user_id'        => $reservation->user_id,
-                'reserved_from'  => $newStart->format('Y-m-d H:i:s'),
-                'reserved_until' => $newEnd->format('Y-m-d H:i:s'),
-                'status'         => 'active',
-            ]);
+            // Create a new reservation with updated times, merging into adjacent/overlapping own reservation if present
+            $ownAdjacent = $asset->reservations()
+                ->where('status', 'active')
+                ->where('user_id', $reservation->user_id)
+                ->where(function ($q) use ($newStart, $newEnd) {
+                    $q->where('reserved_until', $newStart->format('Y-m-d H:i:s'))
+                      ->orWhere('reserved_from', $newEnd->format('Y-m-d H:i:s'))
+                      ->orWhere(function ($q2) use ($newStart, $newEnd) {
+                          $q2->where('reserved_from', '<', $newEnd->format('Y-m-d H:i:s'))
+                             ->where('reserved_until', '>', $newStart->format('Y-m-d H:i:s'));
+                      });
+                })
+                ->first();
+
+            if ($ownAdjacent) {
+                $mergedStart = Carbon::parse($ownAdjacent->reserved_from)->lt($newStart)
+                    ? Carbon::parse($ownAdjacent->reserved_from) : $newStart;
+                $mergedEnd   = Carbon::parse($ownAdjacent->reserved_until)->gt($newEnd)
+                    ? Carbon::parse($ownAdjacent->reserved_until) : $newEnd;
+                $ownAdjacent->reserved_from  = $mergedStart->format('Y-m-d H:i:s');
+                $ownAdjacent->reserved_until = $mergedEnd->format('Y-m-d H:i:s');
+                $ownAdjacent->save();
+            } else {
+                AssetReservation::create([
+                    'asset_id'       => $asset->id,
+                    'user_id'        => $reservation->user_id,
+                    'reserved_from'  => $newStart->format('Y-m-d H:i:s'),
+                    'reserved_until' => $newEnd->format('Y-m-d H:i:s'),
+                    'status'         => 'active',
+                ]);
+            }
         }
 
         // Process additional periods from calendar edit mode (periods_json)
@@ -201,15 +244,37 @@ class AssetReservationController extends Controller
 
                     if ($aEnd->lte($aStart) || !$aEnd->isFuture()) continue;
                     if ($asset->overlapsOngoingCheckout($aStart, $aEnd)) continue;
-                    if ($asset->overlapsReservations($aStart, $aEnd)) continue;
+                    if ($asset->overlapsReservations($aStart, $aEnd, $reservation->user_id)) continue;
 
-                    AssetReservation::create([
-                        'asset_id'       => $asset->id,
-                        'user_id'        => $reservation->user_id,
-                        'reserved_from'  => $aStart->format('Y-m-d H:i:s'),
-                        'reserved_until' => $aEnd->format('Y-m-d H:i:s'),
-                        'status'         => 'active',
-                    ]);
+                    // Merge with adjacent/overlapping own reservation if present
+                    $aOwnAdj = $asset->reservations()
+                        ->where('status', 'active')
+                        ->where('user_id', $reservation->user_id)
+                        ->where(function ($q) use ($aStart, $aEnd) {
+                            $q->where('reserved_until', $aStart->format('Y-m-d H:i:s'))
+                              ->orWhere('reserved_from', $aEnd->format('Y-m-d H:i:s'))
+                              ->orWhere(function ($q2) use ($aStart, $aEnd) {
+                                  $q2->where('reserved_from', '<', $aEnd->format('Y-m-d H:i:s'))
+                                     ->where('reserved_until', '>', $aStart->format('Y-m-d H:i:s'));
+                              });
+                        })
+                        ->first();
+
+                    if ($aOwnAdj) {
+                        $mStart = Carbon::parse($aOwnAdj->reserved_from)->lt($aStart) ? Carbon::parse($aOwnAdj->reserved_from) : $aStart;
+                        $mEnd   = Carbon::parse($aOwnAdj->reserved_until)->gt($aEnd)   ? Carbon::parse($aOwnAdj->reserved_until) : $aEnd;
+                        $aOwnAdj->reserved_from  = $mStart->format('Y-m-d H:i:s');
+                        $aOwnAdj->reserved_until = $mEnd->format('Y-m-d H:i:s');
+                        $aOwnAdj->save();
+                    } else {
+                        AssetReservation::create([
+                            'asset_id'       => $asset->id,
+                            'user_id'        => $reservation->user_id,
+                            'reserved_from'  => $aStart->format('Y-m-d H:i:s'),
+                            'reserved_until' => $aEnd->format('Y-m-d H:i:s'),
+                            'status'         => 'active',
+                        ]);
+                    }
                     $additionalCreated++;
                 }
             }
@@ -295,9 +360,9 @@ class AssetReservationController extends Controller
             ]);
         }
 
-        // Normal user path
+        // Normal user path — include active and fulfilled (already-started) reservations
         $myCount = AssetReservation::where('asset_id', $asset->id)
-            ->where('status', 'active')
+            ->whereIn('status', ['active', 'fulfilled'])
             ->where('user_id', $user->id)
             ->where('reserved_until', '>', now())
             ->count();
@@ -308,7 +373,7 @@ class AssetReservationController extends Controller
         }
 
         $reservations = AssetReservation::where('asset_id', $asset->id)
-            ->where('status', 'active')
+            ->whereIn('status', ['active', 'fulfilled'])
             ->where('user_id', $user->id)
             ->where('reserved_until', '>', now())
             ->orderBy('reserved_from')

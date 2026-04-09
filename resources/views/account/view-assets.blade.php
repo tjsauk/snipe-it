@@ -76,22 +76,14 @@
               <span class="hidden-xs hidden-sm">
                 {{ trans('general.assets') }}
                 @php
-                  $totalAssetsCount = $user->assets()->AssetsForShow()->count() + (isset($active_now_assets) ? $active_now_assets->count() : 0);
+                  // Active = union of checked-out + active-window reservations (deduplicated) + upcoming
+                  $activeIds = $user->assets()->AssetsForShow()->pluck('id')
+                      ->merge(isset($active_now_assets) ? $active_now_assets->pluck('id') : [])
+                      ->unique();
+                  $totalAssetsCount = $activeIds->count() + (isset($reserved_assets) ? $reserved_assets->count() : 0);
                 @endphp
                 {!! $totalAssetsCount > 0 ? '<span class="badge badge-secondary">'.number_format($totalAssetsCount).'</span>' : '' !!}
             </span>
-            </a>
-          </li>
-
-          <li>
-            <a href="#reservations" data-toggle="tab">
-              <span class="hidden-lg hidden-md" aria-hidden="true">
-                <i class="fa fa-calendar"></i>
-              </span>
-              <span class="hidden-xs hidden-sm">
-                Reservations
-                {!! (isset($reserved_assets) && $reserved_assets->count() > 0) ? '<span class="badge badge-secondary">'.number_format($reserved_assets->count()).'</span>' : '' !!}
-              </span>
             </a>
           </li>
 
@@ -453,227 +445,147 @@
               <div class="tab-content">
                 <div class="tab-pane active" id="assets-list">
 
-            <!-- checked out assets table -->
+                  @php
+                    // Merge checked-out assets and active-now reservations into one collection,
+                    // deduplicating by asset ID (checkout entry takes precedence).
+                    $checkedOutIds = $user->assets->pluck('id')->flip();
+                    $activeAssets  = $user->assets->keyBy('id');
+                    foreach (($active_now_assets ?? collect()) as $aNow) {
+                        if (!$activeAssets->has($aNow->id)) {
+                            $activeAssets->put($aNow->id, $aNow);
+                        }
+                    }
+                    $isSuper = auth()->user() && method_exists(auth()->user(), 'isSuperUser') && auth()->user()->isSuperUser();
+                  @endphp
 
-            <table
-                  data-cookie-id-table="userAssignedAssets"
-                  data-toolbar="#userAssetToolbar"
-                  data-id-table="userAssets"
-                  data-side-pagination="client"
-                  data-show-footer="true"
-                  data-sort-name="asset_tag"
-                  data-sort-order="asc"
-                  id="userAssets"
-                  class="table table-striped snipe-table"
-                  data-export-options='{
-                  "fileName": "my-assets-{{ date('Y-m-d') }}",
-                  "ignoreColumn": ["actions","image","change","checkbox","checkincheckout","icon"]
-                  }'>
-
-                    <caption id="userAssetToolbar" class="tableCaption">
-                      {{ trans('general.assets') }}
+                  {{-- Active Reservations: checked-out + active-window reservations --}}
+                  <table
+                    data-cookie-id-table="userActiveAssets"
+                    data-toolbar="#userActiveAssetsToolbar"
+                    data-id-table="userActiveAssets"
+                    data-side-pagination="client"
+                    data-show-footer="true"
+                    data-sort-name="asset_tag"
+                    data-sort-order="asc"
+                    id="userActiveAssets"
+                    class="table table-striped snipe-table"
+                    data-export-options='{
+                      "fileName": "my-active-assets-{{ date('Y-m-d') }}",
+                      "ignoreColumn": ["actions","image","change","checkbox","checkincheckout","icon"]
+                    }'>
+                    <caption id="userActiveAssetsToolbar" class="tableCaption">
+                      Active Reservations
                     </caption>
-
                     <thead>
-                    <tr>
-                      <th class="col-md-1">
-                        #
-                      </th>
-                      <th class="col-md-1">
-                        {{ trans('general.image') }}
-                      </th>
-                      <th class="col-md-2" data-switchable="true" data-visible="true">
-                        {{ trans('general.category') }}
-                      </th>
-                      <th class="col-md-2" data-field="asset_tag" data-sortable="true" data-switchable="true" data-visible="true">
-                        {{ trans('admin/hardware/table.asset_tag') }}
-                      </th>
-
-                      <th class="col-md-2" data-field="name" data-sortable="true" data-switchable="true" data-visible="false">
-                        {{ trans('general.name') }}
-                      </th>
-
-                      <th class="col-md-2" data-switchable="true" data-visible="false">
-                        {{ trans('general.status') }}
-                      </th>
-                      <th class="col-md-2" data-switchable="true" data-visible="true">
-                        {{ trans('admin/hardware/table.asset_model') }}
-                      </th>
-                      <th class="col-md-2" data-switchable="true" data-visible="false">
-                        {{ trans('general.model_no') }}
-                      </th>
-                      <th class="col-md-3" data-field="serial" data-sortable="true" data-switchable="true" data-visible="true">
-                        {{ trans('admin/hardware/table.serial') }}
-                      </th>
-
-                      <th class="col-md-2" data-switchable="true" data-visible="false">
-                        {{ trans('admin/hardware/form.default_location') }}
-                      </th>
-                      <th class="col-md-2" data-switchable="true" data-visible="false">
-                        {{ trans('general.location') }}
-                      </th>
-                      <th class="col-md-2" data-field="expected_checkin" data-sortable="true" data-switchable="true" data-visible="true">
-                        {{ trans('admin/hardware/form.expected_checkin') }}
-                      </th>
-
-                      @can('self.view_purchase_cost')
-                        <th class="col-md-6" data-footer-formatter="sumFormatter" data-fieldname="purchase_cost">
-                          {{ trans('general.purchase_cost') }}
-                        </th>
-                      @endcan
-                      <th class="col-md-2" data-switchable="true" data-visible="true">
-                        {{ trans('admin/hardware/form.eol_date') }}
-                      </th>
-                      <th class="col-md-2" data-switchable="true" data-visible="false">
-                        {{ trans('general.last_audit') }}
-                      </th>
-                      <th class="col-md-2" data-switchable="true" data-visible="false">
-                        {{ trans('general.next_audit_date') }}
-                      </th>
-                      @foreach ($field_array as $db_column => $field_name)
-                        <th class="col-md-1" data-switchable="true" data-visible="true">{{ $field_name }}</th>
-                      @endforeach
-                      <th class="col-md-2 hidden-print" data-switchable="false" data-visible="true">
-                        {{ trans('general.action') }}
-                      </th>
-
-
-                    </tr>
-
+                      <tr>
+                        <th class="col-md-1">#</th>
+                        <th class="col-md-1">{{ trans('general.image') }}</th>
+                        <th class="col-md-2" data-switchable="true" data-visible="true">{{ trans('general.category') }}</th>
+                        <th class="col-md-2" data-field="asset_tag" data-sortable="true" data-switchable="true" data-visible="true">{{ trans('admin/hardware/table.asset_tag') }}</th>
+                        <th class="col-md-2" data-field="name" data-sortable="true" data-switchable="true" data-visible="false">{{ trans('general.name') }}</th>
+                        <th class="col-md-2" data-switchable="true" data-visible="true">{{ trans('admin/hardware/table.asset_model') }}</th>
+                        <th class="col-md-3" data-field="serial" data-sortable="true" data-switchable="true" data-visible="true">{{ trans('admin/hardware/table.serial') }}</th>
+                        <th class="col-md-2" data-switchable="true" data-visible="false">{{ trans('general.location') }}</th>
+                        <th class="col-md-2" data-sortable="true" data-switchable="true" data-visible="true">{{ trans('admin/hardware/form.expected_checkin') }}</th>
+                        @can('self.view_purchase_cost')
+                          <th class="col-md-2" data-footer-formatter="sumFormatter" data-fieldname="purchase_cost">{{ trans('general.purchase_cost') }}</th>
+                        @endcan
+                        <th class="col-md-2 hidden-print" data-switchable="false" data-visible="true">{{ trans('general.action') }}</th>
+                      </tr>
                     </thead>
                     <tbody>
-                    @php
-                      $counter = 1
-                    @endphp
-                    @foreach ($user->assets as $asset)
+                    @php $counter = 1; @endphp
+                    @foreach ($activeAssets as $asset)
+                      @php
+                        $isCheckedOut   = $checkedOutIds->has($asset->id);
+                        $userReservation = $asset->activeReservationForUser($selectedUserId);
+                        // "Return by" date: expected_checkin for checkouts, reserved_until_ui for pure reservations
+                        if ($isCheckedOut && $asset->expected_checkin) {
+                            $returnBy = $asset->expected_checkin_formatted_date;
+                        } elseif ($userReservation && $userReservation->reserved_until) {
+                            $returnBy = Helper::getFormattedDateObject($userReservation->reserved_until_ui, 'datetime', false);
+                        } else {
+                            $returnBy = '';
+                        }
+                      @endphp
                       <tr>
                         <td>{{ $counter }}</td>
                         <td>
-                          @if (($asset->image) && ($asset->image!=''))
-                            <img src="{{ Storage::disk('public')->url(app('assets_upload_path').e($asset->image)) }}" style="max-height: 30px; width: auto" class="img-responsive" alt="">
-                          @elseif (($asset->model) && ($asset->model->image!=''))
-                            <img src="{{ Storage::disk('public')->url(app('models_upload_path').e($asset->model->image)) }}" style="max-height: 30px; width: auto" class="img-responsive" alt="">
+                          @if ($asset->image)
+                            <img src="{{ Storage::disk('public')->url(app('assets_upload_path').e($asset->image)) }}" style="max-height:30px;width:auto" class="img-responsive" alt="">
+                          @elseif ($asset->model && $asset->model->image)
+                            <img src="{{ Storage::disk('public')->url(app('models_upload_path').e($asset->model->image)) }}" style="max-height:30px;width:auto" class="img-responsive" alt="">
                           @endif
                         </td>
                         <td>
-                          @if (($asset->model) && ($asset->model->category))
-                         {!! $asset->model->category->present()->formattedNameLink  !!}
+                          @if ($asset->model && $asset->model->category)
+                            {!! $asset->model->category->present()->formattedNameLink !!}
                           @endif
                         </td>
-                        <td>
-                          <a href="{{ route('hardware.show', $asset->id) }}">
-                            {{ $asset->asset_tag }}
-                          </a>
-                        </td>
-                        <td>
-                          <a href="{{ route('hardware.show', $asset->id) }}">
-                            {{ $asset->name }}
-                          </a>
-                        </td>
-
-                        <td>
-                          <x-icon type="circle-solid" class="text-blue" />
-                          {{ $asset->assetstatus->name }}
-                          <label class="label label-default">{{ trans('general.deployed') }}</label>
-                        </td>
-                        <td>
-                            {!!  ($asset->model) ? $asset->model->present()->formattedNameLink : trans('general.deleted') !!}
-                        </td>
-                        <td>
-                          {{ $asset->model->model_number }}
-                        </td>
-                        <td>
-                          {{ $asset->serial }}
-                        </td>
-                        <td>
-                            {!!  ($asset->defaultLoc) ? $asset->defaultLoc->present()->formattedNameLink : '' !!}
-
-                        </td>
-                        <td>
-                            {!!  ($asset->location) ? $asset->location->present()->formattedNameLink : '' !!}
-                        </td>
-                        <td>
-                          {{ ($asset->expected_checkin) ? $asset->expected_checkin_formatted_date : '' }}
-                        </td>
+                        <td><a href="{{ route('hardware.show', $asset->id) }}">{{ $asset->asset_tag }}</a></td>
+                        <td><a href="{{ route('hardware.show', $asset->id) }}">{{ $asset->name }}</a></td>
+                        <td>{!! $asset->model ? $asset->model->present()->formattedNameLink : trans('general.deleted') !!}</td>
+                        <td>{{ $asset->serial }}</td>
+                        <td>{!! $asset->location ? $asset->location->present()->formattedNameLink : '' !!}</td>
+                        <td>{{ $returnBy }}</td>
                         @can('self.view_purchase_cost')
-                        <td>
-                          {!! Helper::formatCurrencyOutput($asset->purchase_cost) !!}
-                        </td>
+                          <td>{!! Helper::formatCurrencyOutput($asset->purchase_cost) !!}</td>
                         @endcan
-
-                        <td>
-                          {{ ($asset->asset_eol_date != '') ? Helper::getFormattedDateObject($asset->asset_eol_date, 'date', false) : null }}
-                        </td>
-
-                        <td>
-                          {{ Helper::getFormattedDateObject($asset->last_audit_date, 'datetime', false) }}
-                        </td>
-                        <td>
-                          {{ Helper::getFormattedDateObject($asset->next_audit_date, 'date', false) }}
-                        </td>
-
-                        @foreach ($field_array as $db_column => $field_value)
-                          <td>
-                            {{ $asset->{$db_column} }}
-                          </td>
-                        @endforeach
                         <td class="hidden-print">
-                          {{-- Checkin (if user can checkin this asset) --}}
-                          @can('checkin', $asset)
-                            <a href="{{ route('hardware.checkin.create', $asset->id) }}?return_to={{ urlencode($returnToAssets) }}"
-                              class="btn btn-sm btn-primary"
-                              style="margin-right: 5px;">
-                              {{ trans('admin/hardware/general.checkin') }}
-                            </a>
-                          @endcan
-
-                          {{-- Reservation actions --}}
-                          @php
-                              $currentUser = auth()->user();
-                              $userId = $currentUser ? $currentUser->id : null;
-                              $userReservation = $userId ? $asset->activeReservationForUser($selectedUserId) : null;
-                          @endphp
-
-                          {{-- Manage / cancel reservations --}}
-                          @if ($currentUser && method_exists($currentUser, 'isSuperUser') && $currentUser->isSuperUser())
+                          @if ($isCheckedOut)
+                            @can('checkin', $asset)
+                              <a href="{{ route('hardware.checkin.create', $asset->id) }}?return_to={{ urlencode($returnToAssets) }}"
+                                 class="btn btn-sm btn-primary" style="margin-right:5px;">
+                                {{ trans('admin/hardware/general.checkin') }}
+                              </a>
+                            @endcan
+                          @elseif ($userReservation && !$userReservation->isFutureWindow())
+                            {{-- Active reservation window has started but asset not yet checked out -- offer cancellation --}}
+                            <form method="POST"
+                                  action="{{ route('hardware.reserve.destroy', [$asset, $userReservation]) }}"
+                                  style="display:inline-block; margin-right:5px;">
+                              @csrf
+                              @method('DELETE')
+                              <input type="hidden" name="return_to" value="{{ $returnToAssets }}">
+                              <button type="submit" class="btn btn-sm btn-primary"
+                                      onclick="return confirm('End this reservation?')">
+                                <i class="fa fa-sign-in"></i> {{ trans('admin/hardware/general.checkin') }}
+                              </button>
+                            </form>
+                          @endif
+                          @if ($isSuper)
                             @if ($asset->activeReservations()->exists())
                               <a href="{{ route('hardware.reserve.manage', $asset->id) }}?return_to={{ urlencode($returnToAssets) }}"
-                                class="btn btn-sm btn-warning">
+                                 class="btn btn-sm btn-warning">
                                 <i class="fa fa-calendar-times-o"></i> Manage reservations
                               </a>
                             @endif
                           @elseif ($userReservation)
                             <a href="{{ route('hardware.reserve.manage', $asset->id) }}?return_to={{ urlencode($returnToAssets) }}"
-                              class="btn btn-sm btn-warning">
+                               class="btn btn-sm btn-warning">
                               <i class="fa fa-calendar-times-o"></i> Manage my reservation
                             </a>
                           @endif
-
                         </td>
-
-
                       </tr>
-
-                      @php
-                        $counter++
-                      @endphp
+                      @php $counter++; @endphp
                     @endforeach
                     </tbody>
                   </table>
 
-                  {{-- Active-now reservations (reservation window currently running) --}}
-                  @if (isset($active_now_assets) && $active_now_assets->count() > 0)
+                  {{-- Upcoming reservations (reservation window starts in the future) --}}
+                  @if (isset($reserved_assets) && $reserved_assets->count() > 0)
                   <h4 style="padding: 10px 0 5px;">
-                    <i class="fa fa-clock-o"></i> Active Reservations
+                    <i class="fa fa-calendar"></i> Upcoming Reservations
                   </h4>
                   <table
-                    data-cookie-id-table="userActiveNowAssets"
-                    data-id-table="userActiveNowAssets"
+                    data-cookie-id-table="userUpcomingReservations"
+                    data-id-table="userUpcomingReservations"
                     data-side-pagination="client"
                     data-show-footer="true"
-                    id="userActiveNowAssets"
+                    id="userUpcomingReservations"
                     class="table table-striped snipe-table">
-                    <caption class="tableCaption sr-only">Active Reservations</caption>
+                    <caption class="tableCaption sr-only">Upcoming Reservations</caption>
                     <thead>
                       <tr>
                         <th>#</th>
@@ -682,56 +594,62 @@
                         <th>{{ trans('admin/hardware/table.asset_tag') }}</th>
                         <th>{{ trans('general.name') }}</th>
                         <th>{{ trans('admin/hardware/table.asset_model') }}</th>
+                        <th>Reserved from</th>
                         <th>Reserved until</th>
                         <th class="hidden-print">{{ trans('general.action') }}</th>
                       </tr>
                     </thead>
                     <tbody>
-                      @foreach ($active_now_assets as $i => $aNow)
+                      @foreach ($reserved_assets as $i => $rAsset)
                         @php
-                          $aNowReservation = $aNow->reservations()
+                          $rReservation = $rAsset->reservations()
                             ->where('status', 'active')
                             ->where('user_id', $selectedUserId)
-                            ->where('reserved_from', '<=', \Carbon\Carbon::now())
-                            ->where('reserved_until', '>', \Carbon\Carbon::now())
+                            ->where('reserved_from', '>', \Carbon\Carbon::now())
+                            ->orderBy('reserved_from')
                             ->first();
+                          $rIsSuper = auth()->user() && method_exists(auth()->user(), 'isSuperUser') && auth()->user()->isSuperUser();
                         @endphp
                         <tr>
                           <td>{{ $i + 1 }}</td>
                           <td>
-                            @if ($aNow->image)
-                              <img src="{{ Storage::disk('public')->url(app('assets_upload_path').e($aNow->image)) }}" style="max-height:30px;width:auto" class="img-responsive" alt="">
-                            @elseif ($aNow->model && $aNow->model->image)
-                              <img src="{{ Storage::disk('public')->url(app('models_upload_path').e($aNow->model->image)) }}" style="max-height:30px;width:auto" class="img-responsive" alt="">
+                            @if ($rAsset->image)
+                              <img src="{{ Storage::disk('public')->url(app('assets_upload_path').e($rAsset->image)) }}" style="max-height:30px;width:auto" class="img-responsive" alt="">
+                            @elseif ($rAsset->model && $rAsset->model->image)
+                              <img src="{{ Storage::disk('public')->url(app('models_upload_path').e($rAsset->model->image)) }}" style="max-height:30px;width:auto" class="img-responsive" alt="">
                             @endif
                           </td>
                           <td>
-                            @if ($aNow->model && $aNow->model->category)
-                              {!! $aNow->model->category->present()->formattedNameLink !!}
+                            @if ($rAsset->model && $rAsset->model->category)
+                              {!! $rAsset->model->category->present()->formattedNameLink !!}
                             @endif
                           </td>
-                          <td><a href="{{ route('hardware.show', $aNow->id) }}">{{ $aNow->asset_tag }}</a></td>
-                          <td><a href="{{ route('hardware.show', $aNow->id) }}">{{ $aNow->name }}</a></td>
-                          <td>{!! $aNow->model ? $aNow->model->present()->formattedNameLink : '' !!}</td>
+                          <td><a href="{{ route('hardware.show', $rAsset->id) }}">{{ $rAsset->asset_tag }}</a></td>
+                          <td><a href="{{ route('hardware.show', $rAsset->id) }}">{{ $rAsset->name }}</a></td>
+                          <td>{!! $rAsset->model ? $rAsset->model->present()->formattedNameLink : '' !!}</td>
                           <td>
-                            @if ($aNowReservation && $aNowReservation->reserved_until)
-                              {{ Helper::getFormattedDateObject($aNowReservation->reserved_until_ui, 'datetime', false) }}
+                            @if ($rReservation)
+                              {{ Helper::getFormattedDateObject($rReservation->reserved_from, 'datetime', false) }}
+                            @endif
+                          </td>
+                          <td>
+                            @if ($rReservation && $rReservation->reserved_until)
+                              {{ Helper::getFormattedDateObject($rReservation->reserved_until_ui, 'datetime', false) }}
                             @endif
                           </td>
                           <td class="hidden-print">
-                            @if ($aNowReservation)
-                              @php $aNowIsSuper = $currentUser && method_exists($currentUser, 'isSuperUser') && $currentUser->isSuperUser(); @endphp
-                              @if ($aNowIsSuper)
-                                <a href="{{ route('hardware.reserve.manage', $aNow->id) }}?return_to={{ urlencode($returnToAssets) }}"
+                            @if ($rIsSuper)
+                              @if ($rAsset->activeReservations()->exists())
+                                <a href="{{ route('hardware.reserve.manage', $rAsset->id) }}?return_to={{ urlencode($returnToAssets) }}"
                                    class="btn btn-sm btn-warning">
                                   <i class="fa fa-calendar-times-o"></i> Manage reservations
                                 </a>
-                              @else
-                                <a href="{{ route('hardware.reserve.manage', $aNow->id) }}?return_to={{ urlencode($returnToAssets) }}"
-                                   class="btn btn-sm btn-warning">
-                                  <i class="fa fa-calendar-times-o"></i> Manage my reservation
-                                </a>
                               @endif
+                            @elseif ($rReservation)
+                              <a href="{{ route('hardware.reserve.manage', $rAsset->id) }}?return_to={{ urlencode($returnToAssets) }}"
+                                 class="btn btn-sm btn-warning">
+                                <i class="fa fa-calendar-times-o"></i> Manage my reservation
+                              </a>
                             @endif
                           </td>
                         </tr>
@@ -744,9 +662,12 @@
 
                 <div class="tab-pane" id="assets-calendar">
                   @php
-                    // Build calendar data for checked-out + active-now assets
+                    // Calendar data: merged active collection (dedup) + upcoming reservations
                     $profileAssetsCalendarData = [];
-                    foreach ($user->assets()->AssetsForShow()->get() as $cAsset) {
+                    $calSeenIds = [];
+                    foreach ($activeAssets as $cAsset) {
+                        if (in_array($cAsset->id, $calSeenIds)) continue;
+                        $calSeenIds[] = $cAsset->id;
                         $profileAssetsCalendarData[] = [
                             'id'   => (string)$cAsset->id,
                             'name' => $cAsset->name ?? $cAsset->asset_tag,
@@ -759,18 +680,22 @@
                             })->values()->toArray(),
                         ];
                     }
-                    foreach (($active_now_assets ?? collect()) as $aNow) {
-                        $profileAssetsCalendarData[] = [
-                            'id'   => (string)$aNow->id,
-                            'name' => $aNow->name ?? $aNow->asset_tag,
-                            'existingPeriods' => collect($aNow->calendarBlockedRanges())->map(function($r) {
-                                return [
-                                    'start'    => \Carbon\Carbon::parse($r['from'])->format('Y-m-d H:i'),
-                                    'end'      => $r['to'] ? \Carbon\Carbon::parse($r['to'])->format('Y-m-d H:i') : null,
-                                    'userName' => (string)($r['type'] ?? 'blocked'),
-                                ];
-                            })->values()->toArray(),
-                        ];
+                    foreach (($reserved_assets ?? collect()) as $rAsset) {
+                        $rPeriods = [];
+                        foreach ($rAsset->reservations()->where('status','active')->where('user_id',$selectedUserId)->where('reserved_from','>',\Carbon\Carbon::now())->orderBy('reserved_from')->get() as $res) {
+                            $rPeriods[] = [
+                                'start'    => \Carbon\Carbon::parse($res->reserved_from)->format('Y-m-d H:i'),
+                                'end'      => $res->reserved_until ? \Carbon\Carbon::parse($res->reserved_until)->subMinute()->format('Y-m-d H:i') : null,
+                                'userName' => 'reservation',
+                            ];
+                        }
+                        if (!empty($rPeriods)) {
+                            $profileAssetsCalendarData[] = [
+                                'id'              => (string)$rAsset->id,
+                                'name'            => $rAsset->name ?? $rAsset->asset_tag,
+                                'existingPeriods' => $rPeriods,
+                            ];
+                        }
                     }
                   @endphp
                   <div style="padding: 15px;">
@@ -782,175 +707,6 @@
             </div>{{-- /.nav-tabs-custom (assets inner) --}}
 
           </div><!-- /asset -->
-
-          <div class="tab-pane" id="reservations">
-            @php
-              $returnToReservations = url()->current() . '#reservations';
-            @endphp
-
-            {{-- Nested tabs: List | Calendar --}}
-            <div class="nav-tabs-custom" style="margin: 10px; box-shadow: none;">
-              <ul class="nav nav-tabs">
-                <li class="active"><a href="#reservations-list" data-toggle="tab"><i class="fa fa-bars"></i> List</a></li>
-                <li><a href="#reservations-calendar" data-toggle="tab" id="reservations-calendar-tab"><i class="fa fa-calendar"></i> Calendar</a></li>
-              </ul>
-              <div class="tab-content">
-                <div class="tab-pane active" id="reservations-list">
-
-            <table
-              data-cookie-id-table="userReservedAssets"
-              data-id-table="userReservedAssets"
-              data-side-pagination="client"
-              data-show-footer="true"
-              data-sort-name="asset_tag"
-              data-sort-order="asc"
-              id="userReservedAssets"
-              class="table table-striped snipe-table"
-              data-export-options='{
-                "fileName": "my-reservations-{{ date('Y-m-d') }}",
-                "ignoreColumn": ["actions","image","change","checkbox","checkincheckout","icon"]
-              }'>
-
-              <caption class="tableCaption">Reservations</caption>
-
-              <thead>
-                <tr>
-                  <th class="col-md-1">#</th>
-
-                  <th class="col-md-1">
-                    {{ trans('general.image') }}
-                  </th>
-
-                  <th class="col-md-2">
-                    {{ trans('general.category') }}
-                  </th>
-
-                  <th class="col-md-2" data-field="asset_tag" data-sortable="true">
-                    {{ trans('admin/hardware/table.asset_tag') }}
-                  </th>
-
-                  <th class="col-md-3" data-field="name" data-sortable="true">
-                    {{ trans('general.name') }}
-                  </th>
-
-                  <th class="col-md-3" data-field="model" data-sortable="true">
-                    {{ trans('admin/hardware/table.asset_model') }}
-                  </th>
-
-                  <th class="col-md-2 hidden-print">
-                    {{ trans('general.action') }}
-                  </th>
-                </tr>
-              </thead>
-
-
-              <tbody>
-                @php $rCounter = 1; @endphp
-
-                @foreach (($reserved_assets ?? collect()) as $asset)
-                  @php
-                    $currentUser = auth()->user();
-                    $userReservation = $asset->activeReservationForUser($selectedUserId);
-                  @endphp
-
-                  <tr>
-                    <td>{{ $rCounter }}</td>
-
-                      {{-- IMAGE --}}
-                    <td>
-                      @if (($asset->image) && ($asset->image!=''))
-                        <img src="{{ Storage::disk('public')->url(app('assets_upload_path').e($asset->image)) }}"
-                            style="max-height: 30px; width: auto"
-                            class="img-responsive"
-                            alt="">
-                      @elseif (($asset->model) && ($asset->model->image!=''))
-                        <img src="{{ Storage::disk('public')->url(app('models_upload_path').e($asset->model->image)) }}"
-                            style="max-height: 30px; width: auto"
-                            class="img-responsive"
-                            alt="">
-                      @endif
-                    </td>
-
-                    {{-- CATEGORY --}}
-                    <td>
-                      @if (($asset->model) && ($asset->model->category))
-                        {!! $asset->model->category->present()->formattedNameLink !!}
-                      @endif
-                    </td>
-
-                    <td>
-                      <a href="{{ route('hardware.show', $asset->id) }}">
-                        {{ $asset->asset_tag }}
-                      </a>
-                    </td>
-
-                    <td>
-                      <a href="{{ route('hardware.show', $asset->id) }}">
-                        {{ $asset->name }}
-                      </a>
-                    </td>
-
-                    <td>
-                      {!! ($asset->model) ? $asset->model->present()->formattedNameLink : '' !!}
-                    </td>
-
-                    <td class="hidden-print">
-                      {{-- Manage reservations --}}
-                      @if ($currentUser && method_exists($currentUser, 'isSuperUser') && $currentUser->isSuperUser())
-                        @php $activeReservationsCount = $asset->activeReservations()->count(); @endphp
-                        @if ($activeReservationsCount > 0)
-                          <a href="{{ route('hardware.reserve.manage', $asset->id) }}?return_to={{ urlencode($returnToReservations) }}"
-                            class="btn btn-sm btn-warning">
-                            <i class="fas fa-list"></i> Manage reservations
-                          </a>
-                        @endif
-                      @elseif ($userReservation)
-                        <a href="{{ route('hardware.reserve.manage', $asset->id) }}?return_to={{ urlencode($returnToReservations) }}"
-                          class="btn btn-sm btn-warning">
-                          <i class="fas fa-edit"></i> Manage my reservation
-                        </a>
-                      @endif
-
-                    </td>
-                  </tr>
-
-                  @php $rCounter++; @endphp
-                @endforeach
-              </tbody>
-            </table>
-
-                </div>{{-- /.tab-pane#reservations-list --}}
-
-                <div class="tab-pane" id="reservations-calendar">
-                  @php
-                    // Build calendar data: one asset entry per reserved asset, with all their active reservation periods
-                    $calendarAssets = [];
-                    foreach (($reserved_assets ?? collect()) as $rAsset) {
-                        $periods = [];
-                        foreach ($rAsset->activeReservations()->get() as $res) {
-                            $periods[] = [
-                                'start'    => \Carbon\Carbon::parse($res->reserved_from)->format('Y-m-d H:i'),
-                                'end'      => \Carbon\Carbon::parse($res->reserved_until)->subMinute()->format('Y-m-d H:i'),
-                                'userName' => 'reservation',
-                            ];
-                        }
-                        $calendarAssets[] = [
-                            'id'              => (string)$rAsset->id,
-                            'name'            => $rAsset->name ?? $rAsset->asset_tag,
-                            'existingPeriods' => $periods,
-                        ];
-                    }
-                  @endphp
-                  <div style="padding: 15px;">
-                    <div id="profile-calendar-root"></div>
-                  </div>
-                </div>{{-- /.tab-pane#reservations-calendar --}}
-
-              </div>{{-- /.tab-content --}}
-            </div>{{-- /.nav-tabs-custom (inner) --}}
-
-          </div>{{-- /.tab-pane#reservations --}}
-
 
           <div class="tab-pane" id="licenses">
 
@@ -1166,26 +922,6 @@
   <script>
   (function() {
     var currentUser = @json(Auth::user()->username ?? (string)Auth::id());
-
-    console.log('[ProfileCalendar] Script loaded, window.assetCalendarMount:', typeof window.assetCalendarMount);
-
-    // Reservations tab — Calendar sub-tab
-    var reservationsCalData = {!! json_encode($calendarAssets ?? []) !!};
-    jQuery('#reservations-calendar-tab').on('shown.bs.tab', function() {
-      console.log('[ProfileCalendar] Reservations tab shown');
-      var rootEl = document.getElementById('profile-calendar-root');
-      console.log('[ProfileCalendar] rootEl:', rootEl);
-      console.log('[ProfileCalendar] window.assetCalendarMount:', typeof window.assetCalendarMount);
-      if (rootEl && typeof window.assetCalendarMount === 'function') {
-        console.log('[ProfileCalendar] Mounting reservations calendar...');
-        window.assetCalendarMount(rootEl, {
-          mode: 'view', currentUser: currentUser, continuousCutMode: true,
-          assets: reservationsCalData
-        });
-      } else {
-        console.error('[ProfileCalendar] Cannot mount - missing rootEl or assetCalendarMount function');
-      }
-    });
 
     // Assets tab — Calendar sub-tab
     var assetsCalData = {!! json_encode($profileAssetsCalendarData ?? []) !!};

@@ -1307,6 +1307,18 @@
         window[formatters[i] + 'InOutFormatter'] = genericCheckinCheckoutFormatter(formatters[i]);
     }
 
+    // Hardware assets: only show checkin button (no checkout button in this column)
+    window['hardwareInOutFormatter'] = function(value, row) {
+        if (row.available_actions && row.available_actions.checkin == true) {
+            if (row.assigned_to) {
+                return '<a href="' + addReturnTo('{{ config('app.url') }}/hardware/' + row.id + '/checkin') + '" class="btn btn-sm bg-purple" data-tooltip="true" title="{{ trans('general.checkin_tooltip') }}">{{ trans('general.checkin') }}</a>';
+            } else if (row.assigned_pivot_id) {
+                return '<a href="' + addReturnTo('{{ config('app.url') }}/hardware/' + row.assigned_pivot_id + '/checkin') + '" class="btn btn-sm bg-purple" data-tooltip="true" title="{{ trans('general.checkin_tooltip') }}">{{ trans('general.checkin') }}</a>';
+            }
+        }
+        return '';
+    };
+
     var child_formatters = [
         ['kits', 'models'],
         ['kits', 'licenses'],

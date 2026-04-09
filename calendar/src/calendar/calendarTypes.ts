@@ -45,6 +45,10 @@ export type CalendarInput = {
   currentUsers?: string[];
   assets: Asset[];
   continuousCutMode?: boolean;
+  /** In edit mode: disable moving the whole period (only end-resize allowed). */
+  lockStart?: boolean;
+  /** ISO date string — navigate the calendar to this date's week on first render. */
+  initialAnchorDate?: string;
 };
 
 export type CalendarOutput = {
@@ -61,6 +65,7 @@ export type SelectionPeriodDef = {
 export type DraftGroup = {
   periodId: string;
   groupKey: string;
+  displayColumnKey: string;
   assets: Asset[];
   periods: TimePeriod[];
   status: PeriodStatus;

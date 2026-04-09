@@ -301,6 +301,10 @@
                             style="{{ $checkoutType === 'asset' ? 'display:none;' : '' }}">
                             <i class="fa fa-calendar"></i> {{ trans('general.checkout') }}
                         </a>
+                        <a href="{{ old('return_to', $return_to ?? session('return_to') ?? route('hardware.show', $asset)) }}"
+                           class="btn btn-default" style="margin-left:5px;">
+                            <i class="fa fa-times"></i> {{ trans('button.cancel') }}
+                        </a>
                     </div>
 
                     </div>{{-- /.tab-pane#reserve-details --}}
@@ -371,6 +375,8 @@
         var startHour  = parseInt(startParts[1].split(':')[0], 10);
         var endHour    = parseInt(endParts[1].split(':')[0], 10);
 
+        // Send all periods via periods_json; primary fields are populated for
+        // single-period backward-compat fallback (backend ignores them when periods_json present).
         document.getElementById('checkout_at').value           = startParts[0];
         document.getElementById('checkout_hour').value         = String(startHour);
         document.getElementById('expected_checkin').value      = endParts[0];
