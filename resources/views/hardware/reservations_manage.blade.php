@@ -1,7 +1,7 @@
 @extends('layouts/default')
 
 @section('title')
-    Manage Reservations - {{ $asset->asset_tag }}
+    Manage Reservations and Checkouts - {{ $asset->asset_tag }}
     @parent
 @stop
 
@@ -16,7 +16,7 @@
             <div class="box box-default">
                 <div class="box-header with-border">
                     <h2 class="box-title">
-                        Manage Reservations for Asset: {{ $asset->asset_tag }} - {{ $asset->name }}
+                        Manage Reservations and Checkouts for Asset: {{ $asset->asset_tag }} - {{ $asset->name }}
                     </h2>
                 </div>
 
@@ -30,22 +30,24 @@
                         <div class="alert alert-danger">{{ session('error') }}</div>
                     @endif
 
-                    @if ($reservations->isEmpty())
-                        <p>No active reservations for this asset.</p>
+                    @if ($reservations->isEmpty() && $checkouts->isEmpty())
+                        <p>No active reservations or checkouts for this asset.</p>
                     @else
                         <div class="table-responsive">
                         <table class="table table-striped" style="white-space: nowrap;">
                             <thead>
                             <tr>
+                                <th>Type</th>
                                 <th>User</th>
-                                <th>Reserved From</th>
-                                <th>Reserved Until</th>
+                                <th>From</th>
+                                <th>Until</th>
                                 <th>Actions</th>
                             </tr>
                             </thead>
                             <tbody>
                             @foreach ($reservations as $reservation)
                                 <tr>
+                                    <td>Reservation</td>
                                     <td>
                                         {{ optional($reservation->user)->present()->fullName
                                             ?? optional($reservation->user)->email
@@ -83,6 +85,33 @@
                                             </button>
                                         </form>
                                         @endif
+                                    </td>
+                                </tr>
+                            @endforeach
+                            @foreach ($checkouts as $checkout)
+                                <tr>
+                                    <td>Checkout</td>
+                                    <td>
+                                        {{ optional($checkout->user)->present()->fullName
+                                            ?? optional($checkout->user)->email
+                                            ?? ('User #'.(optional($checkout->user)->id ?? $checkout->user_id ?? '?')) }}
+                                        <span class="label label-info" style="margin-left:4px;">Checked Out</span>
+                                    </td>
+                                    <td>
+                                        {{ \App\Helpers\Helper::getFormattedDateObject($checkout->reserved_from, 'datetime', false) }}
+                                    </td>
+                                    <td>
+                                        @if ($checkout->reserved_until)
+                                            {{ \App\Helpers\Helper::getFormattedDateObject($checkout->reserved_until, 'datetime', false) }}
+                                        @else
+                                            —
+                                        @endif
+                                    </td>
+                                    <td>
+                                        <a href="{{ route('hardware.checkout.edit', $asset) }}?return_to={{ urlencode(request()->fullUrl()) }}"
+                                           class="btn btn-xs btn-primary" style="margin-right: 4px;">
+                                            <i class="fa fa-pencil"></i> Edit
+                                        </a>
                                     </td>
                                 </tr>
                             @endforeach

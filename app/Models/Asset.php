@@ -600,6 +600,56 @@ class Asset extends Depreciable
     }
 
     /**
+     * After extending a checkout's expected_checkin to $checkoutEnd, keep absorbing any
+     * own active reservations that are now adjacent or overlapping (chain merge).
+     * Cancels each absorbed reservation and returns the final end time.
+     *
+     * Also updates asset.expected_checkin and the fulfilled reservation record.
+     */
+    public function absorbAdjacentReservations(int $userId, Carbon $checkoutEnd, string $tz): Carbon
+    {
+        $finalEnd = $checkoutEnd->copy();
+
+        do {
+            $next = $this->reservations()
+                ->where('status', 'active')
+                ->where('user_id', $userId)
+                ->where('reserved_until', '>', now()->format('Y-m-d H:i:s'))
+                ->where('reserved_from', '<=', $finalEnd->format('Y-m-d H:i:s'))
+                ->orderBy('reserved_from')
+                ->first();
+
+            if (!$next) break;
+
+            $nextEnd = Carbon::parse($next->reserved_until, $tz);
+            if ($nextEnd->gt($finalEnd)) {
+                $finalEnd = $nextEnd;
+            }
+            $next->status = 'cancelled';
+            $next->save();
+        } while (true);
+
+        if ($finalEnd->gt($checkoutEnd)) {
+            $this->expected_checkin = $finalEnd->format('Y-m-d H:i:s');
+            $this->save();
+
+            // Keep the fulfilled reservation record in sync
+            $fulfilled = $this->reservations()
+                ->where('status', 'fulfilled')
+                ->where('user_id', $userId)
+                ->where('reserved_until', '>', now()->format('Y-m-d H:i:s'))
+                ->orderByDesc('reserved_from')
+                ->first();
+            if ($fulfilled) {
+                $fulfilled->reserved_until = $finalEnd->format('Y-m-d H:i:s');
+                $fulfilled->save();
+            }
+        }
+
+        return $finalEnd;
+    }
+
+    /**
      * Determine if the given date range overlaps an ongoing checkout window.
      * (We’ll use this later to block reservations that conflict with a live checkout.)
      */
@@ -750,8 +800,6 @@ class Asset extends Depreciable
         if ($this->assigned_to) {
             return;
         }
-
-        // Find the first active reservation whose window includes "now"
         $reservation = $this->reservations()
             ->where('status', 'active')
             ->where('reserved_from', '<=', $now)
@@ -763,6 +811,11 @@ class Asset extends Depreciable
             ->first();
 
         if (!$reservation) {
+            return;
+        }
+
+        // If the asset is already checked out to someone else, do nothing
+        if ($this->assigned_to && !($this->assigned_to == $reservation->user_id && $this->assigned_type == 'App\Models\User')) {
             return;
         }
 
@@ -793,28 +846,35 @@ class Asset extends Depreciable
             return;
         }
 
-        // Use TODAY as checkout start when converting (reservation is "due now")
-        $checkoutAt = $now->format('Y-m-d H:i:s');
-
-
-        // Expected checkin is reservation end (if any); if null, you can pick a default
-        $expected = $reservation->reserved_until
-            ? Carbon::parse($reservation->reserved_until)->format('Y-m-d H:i:s')
-            : null;
-
-        $success = $this->checkOut(
-            $targetUser,
-            $admin,
-            $checkoutAt,
-            $expected,
-            'Auto checkout from reservation window',
-            $this->name
-        );
-
-        if ($success) {
-            // Mark fulfilled; keep the record so it stays visible until reserved_until passes
+        if ($this->assigned_to) {
+            // Extend the checkout
+            $this->expected_checkin = $reservation->reserved_until;
+            $this->save();
             $reservation->status = 'fulfilled';
             $reservation->save();
+        } else {
+            // Use TODAY as checkout start when converting (reservation is "due now")
+            $checkoutAt = $now->format('Y-m-d H:i:s');
+
+            // Expected checkin is reservation end (if any); if null, you can pick a default
+            $expected = $reservation->reserved_until
+                ? Carbon::parse($reservation->reserved_until)->format('Y-m-d H:i:s')
+                : null;
+
+            $success = $this->checkOut(
+                $targetUser,
+                $admin,
+                $checkoutAt,
+                $expected,
+                'Auto checkout from reservation window',
+                $this->name
+            );
+
+            if ($success) {
+                // Mark fulfilled; keep the record so it stays visible until reserved_until passes
+                $reservation->status = 'fulfilled';
+                $reservation->save();
+            }
         }
     }
 

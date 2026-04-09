@@ -1,7 +1,7 @@
 @extends('layouts/default')
 
 @section('title')
-    Edit Reservation - {{ $asset->asset_tag }}
+    @if($reservation->id == 'checkout') Edit Checkout @else Edit Reservation @endif - {{ $asset->asset_tag }}
     @parent
 @stop
 
@@ -30,14 +30,14 @@
             <div class="box box-default">
                 <div class="box-header with-border">
                     <h2 class="box-title">
-                        Edit Reservation &mdash; {{ $asset->asset_tag }}
+                        @if($reservation->id == 'checkout') Edit Checkout @else Edit Reservation @endif &mdash; {{ $asset->asset_tag }}
                         @if($asset->name) / {{ $asset->name }} @endif
                     </h2>
                 </div>
 
                 <form id="reservationEditForm" class="form-horizontal"
                       method="POST"
-                      action="{{ route('hardware.reserve.update', [$asset, $reservation]) }}">
+                      action="@if($reservation->id == 'checkout') {{ route('hardware.checkout.update', $asset) }} @else {{ route('hardware.reserve.update', [$asset, $reservation]) }} @endif">
                     @csrf
                     @method('PUT')
                     <input type="hidden" name="return_to" value="{{ $return_to }}">
@@ -133,12 +133,13 @@
         // Own user's other reservations are shown visually but must NOT block dragging
         // (they will merge on save). Other users' / checkout blocks still block.
         $isOwnUserReservation = isset($r['user_id']) && $r['user_id'] === $reservation->user_id;
+        $isOwnCheckout = ($r['type'] ?? '') === 'checkout' && !empty($r['own_checkout']);
         $entry = [
             'start'    => \Carbon\Carbon::parse($r['from'])->format('Y-m-d H:i'),
             'end'      => $r['to'] ? \Carbon\Carbon::parse($r['to'])->format('Y-m-d H:i') : null,
             'userName' => (string)($r['type'] ?? 'blocked'),
         ];
-        if ($isOwnUserReservation) {
+        if ($isOwnUserReservation || $isOwnCheckout) {
             $entry['noBlock'] = true;
         }
         return $entry;

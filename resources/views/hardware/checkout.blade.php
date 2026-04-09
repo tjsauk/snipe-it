@@ -391,6 +391,22 @@
     <script>
     (function() {
         var calendarMounted = false;
+
+        function checkoutType() {
+            const form = document.getElementById('assetCheckoutForm');
+            // Primary: native checked state
+            const checked = form?.querySelector('input[name="checkout_to_type"]:checked')?.value;
+            if (checked) return checked;
+            // Fallback: Bootstrap 3 active label
+            const activeInput = form?.querySelector('[data-toggle="buttons"] label.active input[name="checkout_to_type"]');
+            if (activeInput) return activeInput.value;
+            return (
+                form?.querySelector('select[name="checkout_to_type"]')?.value ||
+                form?.querySelector('input[name="checkout_to_type"][type="hidden"]')?.value ||
+                'user'
+            );
+        }
+
         document.addEventListener('shown.bs.tab', mountIfCalendar);
         // Bootstrap 3 fires 'shown.bs.tab' on the <a>, not the <li>
         document.querySelectorAll('a[href="#reserve-calendar"]').forEach(function(el) {
@@ -402,6 +418,7 @@
         }
         function mountIfCalendar() {
             if (calendarMounted) return;
+            if (checkoutType() === 'asset') return;
             calendarMounted = true;
             var script = document.createElement('script');
             script.src = '{{ asset('vendor/asset-calendar/asset-calendar.js') }}';

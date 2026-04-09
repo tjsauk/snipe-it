@@ -137,6 +137,12 @@ Route::group(
         Route::put('{asset}/reservations/{reservation}', [AssetReservationController::class, 'update'])
             ->name('hardware.reserve.update');
 
+        // Edit checkout
+        Route::get('{asset}/checkout/edit', [AssetCheckoutController::class, 'edit'])
+            ->name('hardware.checkout.edit');
+        Route::put('{asset}/checkout', [AssetCheckoutController::class, 'update'])
+            ->name('hardware.checkout.update');
+
         // Show reservation management page for an asset
         Route::get('{asset}/reservations/manage', [AssetReservationController::class, 'manage'])
             ->name('hardware.reserve.manage');

@@ -251,6 +251,26 @@
                                                     </span>
                                             </div>
                                         @endcan
+
+                                        {{-- Edit checkout --}}
+                                        @php
+                                            $canEditCheckout = false;
+                                            if ($asset->assigned_type === 'App\Models\Asset') {
+                                                $canEditCheckout = auth()->user()->can('checkout', $asset);
+                                            } else {
+                                                $user = auth()->user();
+                                                $isSuper = $user && method_exists($user, 'isSuperUser') && $user->isSuperUser();
+                                                $canEditCheckout = $isSuper || ($asset->assigned_to == $user->id);
+                                            }
+                                        @endphp
+                                        @if ($canEditCheckout)
+                                            <div class="col-md-12 hidden-print" style="padding-top: 5px;">
+                                                <a href="{{ route('hardware.checkout.edit', ['asset' => $asset->id, 'return_to' => url()->full()]) }}" class="btn btn-sm btn-warning btn-social btn-block hidden-print">
+                                                    <i class="fa fa-edit"></i>
+                                                    Edit Checkout
+                                                </a>
+                                            </div>
+                                        @endif
                                     @endif
                                 @endif
 

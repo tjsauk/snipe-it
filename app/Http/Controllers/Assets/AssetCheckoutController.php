@@ -206,6 +206,21 @@ class AssetCheckoutController extends Controller
                     ->with('error', trans('admin/hardware/message.does_not_exist'));
             }
 
+            // Determine if this checkout is to another asset (no date selection needed)
+            $isCheckoutToAsset = ($request->get('checkout_to_type') === 'asset');
+
+            // For checkout-to-asset, set default dates immediately (before reserveMode is determined)
+            if ($isCheckoutToAsset) {
+                $nowTz = Carbon::now(config('app.timezone'));
+                if (!$request->filled('checkout_at')) {
+                    $request->merge(['checkout_at' => $nowTz->toDateString(), 'checkout_hour' => $nowTz->hour]);
+                }
+                if (!$request->filled('expected_checkin')) {
+                    $request->merge(['expected_checkin' => $nowTz->toDateString(), 'expected_checkin_hour' => $nowTz->hour]);
+                }
+                $request->merge(['periods_json' => null]);
+            }
+
             // Reserve mode is auto-detected from the start datetime:
             // start > current hour → future reservation; start <= current hour → immediate checkout.
             $tzEarly         = config('app.timezone');
@@ -241,8 +256,11 @@ class AssetCheckoutController extends Controller
 
             // Only block availability for normal checkout
             if (! $reserveMode && ! $asset->availableForCheckout()) {
-                return redirect()->route('hardware.index')
-                    ->with('error', trans('admin/hardware/message.checkout.not_available'));
+                // For checkout to asset, also allow if checked out to current user
+                if ($checkoutToType !== 'asset' || ! ($asset->assigned_to == auth()->id() && $asset->assigned_type == 'App\Models\User')) {
+                    return redirect()->route('hardware.index')
+                        ->with('error', trans('admin/hardware/message.checkout.not_available'));
+                }
             }
 
 
@@ -259,11 +277,6 @@ class AssetCheckoutController extends Controller
             }
 
             $admin = auth()->user();
-
-            
-
-            // Determine if this checkout is to another asset (no date selection needed)
-            $isCheckoutToAsset = ($request->get('checkout_to_type') === 'asset');
 
             $target = $this->determineCheckoutTarget();
 
@@ -449,17 +462,57 @@ class AssetCheckoutController extends Controller
                         $periodErrors[] = 'Period ' . ($idx + 1) . ': end must be after start.';
                         continue;
                     }
-                    if ($asset->overlapsOngoingCheckout($pStartDT, $pEndDT)) {
-                        $periodErrors[] = 'Period ' . ($idx + 1) . ': overlaps ongoing checkout.';
-                        continue;
-                    }
-                    if (!is_null($asset->assigned_to) && $asset->expected_checkin) {
-                        $currentEnd = Carbon::parse($asset->expected_checkin);
-                        if ($pStartDT->lt($currentEnd)) {
+
+                    // Check if this period can merge with own ongoing checkout (same user).
+                    $ownCheckoutActive = !is_null($asset->assigned_to)
+                        && $asset->assigned_type == \App\Models\User::class
+                        && $asset->assigned_to == $reservationUserId
+                        && $asset->last_checkout;
+
+                    if ($ownCheckoutActive) {
+                        $coStart = Carbon::parse($asset->last_checkout, $tz);
+                        $coEnd   = $asset->expected_checkin ? Carbon::parse($asset->expected_checkin, $tz) : null;
+
+                        // Adjacent or overlapping → merge into checkout by extending its end
+                        if (!$coEnd || $pStartDT->lte($coEnd)) {
+                            $mergedEnd = $coEnd ? ($pEndDT->gt($coEnd) ? $pEndDT : $coEnd) : $pEndDT;
+                            $asset->expected_checkin = $mergedEnd->format('Y-m-d H:i:s');
+                            $asset->save();
+
+                            // Keep fulfilled reservation in sync
+                            $fulfilledRes = $asset->reservations()
+                                ->where('status', 'fulfilled')
+                                ->where('user_id', $reservationUserId)
+                                ->where('reserved_until', '>', now()->format('Y-m-d H:i:s'))
+                                ->orderByDesc('reserved_from')
+                                ->first();
+                            if ($fulfilledRes) {
+                                $fulfilledRes->reserved_until = $mergedEnd->format('Y-m-d H:i:s');
+                                $fulfilledRes->save();
+                            }
+
+                            // Chain-merge any reservations now adjacent to the extended checkout
+                            $asset->absorbAdjacentReservations($reservationUserId, $mergedEnd, $tz);
+
+                            $successCount++;
+                            continue;
+                        }
+                        // New period starts after checkout ends — allow it as a normal future reservation
+                    } else {
+                        // Not own checkout: block overlaps with any ongoing checkout
+                        if ($asset->overlapsOngoingCheckout($pStartDT, $pEndDT)) {
                             $periodErrors[] = 'Period ' . ($idx + 1) . ': overlaps ongoing checkout.';
                             continue;
                         }
+                        if (!is_null($asset->assigned_to) && $asset->expected_checkin) {
+                            $currentEnd = Carbon::parse($asset->expected_checkin);
+                            if ($pStartDT->lt($currentEnd)) {
+                                $periodErrors[] = 'Period ' . ($idx + 1) . ': overlaps ongoing checkout.';
+                                continue;
+                            }
+                        }
                     }
+
                     // Block overlap with other users' reservations
                     if ($asset->overlapsReservations($pStartDT, $pEndDT, $reservationUserId)) {
                         $periodErrors[] = 'Period ' . ($idx + 1) . ': overlaps existing reservation.';
@@ -640,6 +693,145 @@ class AssetCheckoutController extends Controller
             return redirect()->back()
                 ->with('error', $e->getMessage());
         }
+    }
+
+    /**
+     * Show the form for editing a checkout (only expected checkin can be changed).
+     */
+    public function edit(Request $request, Asset $asset): View | RedirectResponse
+    {
+        // Check if the asset is checked out
+        if (!$asset->assigned_to) {
+            return redirect()->route('hardware.show', $asset)
+                ->with('error', 'Asset is not checked out.');
+        }
+
+        $user = auth()->user();
+        $isSuper = $user && method_exists($user, 'isSuperUser') && $user->isSuperUser();
+
+        // For checkout to asset, allow editing if the user is superuser or has checkout rights
+        $isCheckoutToAsset = $asset->assigned_type === 'App\Models\Asset';
+        if ($isCheckoutToAsset) {
+            if (!$isSuper) {
+                $this->authorize('checkout', $asset);
+            }
+        } else {
+            // For user/location checkouts, only allow if checked out to current user or admin
+            if (!$isSuper && $asset->assigned_to != $user->id) {
+                abort(403);
+            }
+        }
+
+        $returnTo = $request->input('return_to')
+            ?: session('return_to_after_edit')
+            ?: session('return_to')
+            ?: route('hardware.show', $asset->id);
+
+        // Get calendar blocked ranges
+        $calendarRanges = $asset->calendarBlockedRanges();
+
+        // Create pseudo reservation for using reservation edit view
+        $pseudoReservation = (object) [
+            'id' => 'checkout',
+            'user_id' => $asset->assigned_to,
+            'user' => $asset->assignedTo,
+            'reserved_from' => Carbon::parse($asset->last_checkout),
+            'reserved_until' => $asset->expected_checkin ? Carbon::parse($asset->expected_checkin) : null,
+            'status' => 'fulfilled',
+        ];
+
+        return view('hardware/reservation_edit', [
+            'asset' => $asset,
+            'reservation' => $pseudoReservation,
+            'can_change_start' => false,
+            'return_to' => $returnTo,
+            'calendarRanges' => $calendarRanges,
+            'is_super' => $isSuper,
+        ]);
+    }
+
+    /**
+     * Update the expected checkin date for a checkout.
+     */
+    public function update(Request $request, Asset $asset): RedirectResponse
+    {
+        // Check if the asset is checked out
+        if (!$asset->assigned_to) {
+            return redirect()->route('hardware.show', $asset)
+                ->with('error', 'Asset is not checked out.');
+        }
+
+        $user = auth()->user();
+        $isSuper = $user && method_exists($user, 'isSuperUser') && $user->isSuperUser();
+
+        // For checkout to asset, allow editing if the user is superuser or has checkout rights
+        $isCheckoutToAsset = $asset->assigned_type === 'App\Models\Asset';
+        if ($isCheckoutToAsset) {
+            if (!$isSuper) {
+                $this->authorize('checkout', $asset);
+            }
+        } else {
+            // For user/location checkouts, only allow if checked out to current user or admin
+            if (!$isSuper && $asset->assigned_to != $user->id) {
+                abort(403);
+            }
+        }
+
+        $returnTo = $request->input('return_to')
+            ?: session('return_to')
+            ?: route('hardware.show', $asset->id);
+
+        $tz = config('app.timezone');
+
+        // Handle periods_json if provided (from calendar selection)
+        $newExpectedCheckin = null;
+        if ($request->filled('periods_json')) {
+            $decoded = json_decode($request->input('periods_json'), true);
+            if (is_array($decoded) && count($decoded) > 0) {
+                // Take the end of the first (and only) period
+                $endDT = Carbon::parse($decoded[0]['end'], $tz);
+                $newExpectedCheckin = $endDT;
+            }
+        }
+
+        if (!$newExpectedCheckin) {
+            // Build new expected checkin datetime from form fields
+            $endDate = $request->input('expected_checkin');
+            $endHour = $request->filled('expected_checkin_hour') ? (int) $request->input('expected_checkin_hour') : 0;
+            if (!$endDate) {
+                return back()->withInput()->with('error', 'Expected checkin date is required.');
+            }
+            // End slot start + 1 hour = boundary end
+            $endSlot = Carbon::parse($endDate, $tz)->setTime($endHour, 0, 0);
+            $newExpectedCheckin = $endSlot->copy()->addHour();
+        }
+
+        if ($newExpectedCheckin->isPast()) {
+            return back()->withInput()->with('error', 'Expected checkin must be in the future.');
+        }
+
+        // Check for overlaps with OTHER users' reservations only.
+        // overlapsOngoingCheckout is intentionally skipped: we ARE the ongoing checkout,
+        // so checking against ourselves would always return true.
+        $checkoutStart = $asset->last_checkout ? Carbon::parse($asset->last_checkout) : Carbon::now();
+        if ($asset->overlapsReservations($checkoutStart, $newExpectedCheckin, $asset->assigned_to)) {
+            return back()->withInput()->with('error', 'The new expected checkin overlaps an existing reservation.');
+        }
+
+        // Update the expected checkin
+        $asset->expected_checkin = $newExpectedCheckin->format('Y-m-d H:i:s');
+        $asset->save();
+
+        // Chain-merge any own active reservations now adjacent to / overlapping the checkout window.
+        $checkoutUserId = $asset->assigned_to;
+        if ($checkoutUserId) {
+            $finalEnd = $asset->absorbAdjacentReservations($checkoutUserId, $newExpectedCheckin, $tz);
+            if ($finalEnd->gt($newExpectedCheckin)) {
+                return redirect($returnTo)->with('success', 'Checkout extended and merged with reservation(s).');
+            }
+        }
+
+        return redirect($returnTo)->with('success', 'Checkout updated successfully.');
     }
 
 }
