@@ -170,11 +170,17 @@ class Asset extends Depreciable
                 ? $boundaryEndToUiLastHour($this->expected_checkin)
                 : null;
 
-            $ranges[] = [
+            $checkoutRange = [
                 'from' => $start->format('Y-m-d H:i:s'),
                 'to'   => $uiEnd ? $uiEnd->format('Y-m-d H:i:s') : null,
                 'type' => 'checkout',
             ];
+            if ($this->assigned_type === \App\Models\User::class) {
+                $checkoutRange['user_id'] = $this->assigned_to;
+            } elseif ($this->assigned_type === \App\Models\Asset::class) {
+                $checkoutRange['assigned_asset_id'] = $this->assigned_to;
+            }
+            $ranges[] = $checkoutRange;
         }
 
         // -------------------------

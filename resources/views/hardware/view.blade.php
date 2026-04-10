@@ -1596,21 +1596,37 @@
                                     $childRawRanges  = $asset->calendarBlockedRanges();
                                     $parentRawRanges = $parentAsset ? $parentAsset->calendarBlockedRanges() : [];
 
-                                    // Resolve user IDs → usernames in one query
-                                    $allUserIds = collect(array_merge($childRawRanges, $parentRawRanges))
-                                        ->pluck('user_id')->filter()->unique()->values()->toArray();
-                                    $calendarUsernames = count($allUserIds)
-                                        ? \App\Models\User::whereIn('id', $allUserIds)->pluck('username', 'id')
+                                    // Resolve user IDs → display names in one query (checkout + reservation users)
+                                    $allRanges  = array_merge($childRawRanges, $parentRawRanges);
+                                    $allUserIds = collect($allRanges)->pluck('user_id')->filter()->unique()->values()->toArray();
+                                    $calendarUsers = count($allUserIds)
+                                        ? \App\Models\User::whereIn('id', $allUserIds)->get()->keyBy('id')
                                         : collect();
 
-                                    $toCalendarPeriod = function($r) use ($calendarUsernames) {
+                                    // Resolve asset IDs for checkout-to-asset ranges
+                                    $assignedAssetIds = collect($allRanges)->pluck('assigned_asset_id')->filter()->unique()->values()->toArray();
+                                    $calendarAssetsById = count($assignedAssetIds)
+                                        ? \App\Models\Asset::whereIn('id', $assignedAssetIds)->get()->keyBy('id')
+                                        : collect();
+
+                                    $resolveUserName = function($user) {
+                                        return trim($user->first_name . ' ' . $user->last_name) ?: $user->username;
+                                    };
+
+                                    $toCalendarPeriod = function($r) use ($calendarUsers, $calendarAssetsById, $resolveUserName) {
                                         if ($r['to'] === null) return null;
+                                        if (isset($r['user_id']) && $calendarUsers->has($r['user_id'])) {
+                                            $name = $resolveUserName($calendarUsers[$r['user_id']]);
+                                        } elseif (isset($r['assigned_asset_id']) && $calendarAssetsById->has($r['assigned_asset_id'])) {
+                                            $target = $calendarAssetsById[$r['assigned_asset_id']];
+                                            $name = $target->name ?? $target->asset_tag;
+                                        } else {
+                                            $name = (string)($r['type'] ?? 'blocked');
+                                        }
                                         return [
                                             'start'    => \Carbon\Carbon::parse($r['from'])->format('Y-m-d H:i'),
                                             'end'      => \Carbon\Carbon::parse($r['to'])->format('Y-m-d H:i'),
-                                            'userName' => (isset($r['user_id']) && $calendarUsernames->has($r['user_id']))
-                                                ? $calendarUsernames[$r['user_id']]
-                                                : (($r['type'] ?? '') === 'checkout' ? 'checkout' : 'reserved'),
+                                            'userName' => $name,
                                         ];
                                     };
 
