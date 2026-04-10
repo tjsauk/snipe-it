@@ -162,7 +162,25 @@ class AssetCheckoutController extends Controller
 
             $defaultCheckoutAt = $start->toDateString();
             $defaultExpectedCheckin = $end->toDateString();
-            $calendarRanges = $asset->calendarBlockedRanges();
+            // Filter out open-ended ranges (to: null) — these occur when an asset is checked out
+            // to another asset with no expected_checkin. The calendar JS cannot handle null end
+            // dates and would crash. These ranges also don't block reservations (overlapsOngoingCheckout
+            // returns false for them), so excluding them from the calendar is consistent.
+            $calendarRanges = array_values(array_filter(
+                $asset->calendarBlockedRanges(),
+                fn($r) => $r['to'] !== null
+            ));
+
+            // When the asset is checked out to a parent asset, also include the parent's blocked
+            // ranges so the reserve calendar shows the parent's schedule as occupied.
+            if ($asset->assigned_type === \App\Models\Asset::class && $asset->assignedTo) {
+                $parentName = $asset->assignedTo->name ?? $asset->assignedTo->asset_tag;
+                foreach ($asset->assignedTo->calendarBlockedRanges() as $pr) {
+                    if ($pr['to'] === null) continue;
+                    $pr['_source_asset_name'] = $parentName;
+                    $calendarRanges[] = $pr;
+                }
+            }
 
             // Store where the user came from (only once)
             if (!session()->has('return_to')) {
@@ -670,6 +688,55 @@ class AssetCheckoutController extends Controller
                 if ($fulfillReservation && $userReservation) {
                     $userReservation->status = 'fulfilled';
                     $userReservation->save();
+                }
+
+                // Process any additional future periods from periods_json as reservations.
+                // This handles the case where the user selects the current hour (→ checkout)
+                // AND one or more future periods (→ reservations) in the same calendar action.
+                $periodsJson = $request->input('periods_json');
+                if ($periodsJson && !$isCheckoutToAsset) {
+                    $decoded = json_decode($periodsJson, true);
+                    if (is_array($decoded)) {
+                        foreach ($decoded as $p) {
+                            $sParts = explode(' ', $p['start'] ?? '');
+                            $eParts = explode(' ', $p['end'] ?? '');
+                            if (count($sParts) < 2 || count($eParts) < 2) continue;
+
+                            $pStartDT = Carbon::parse($sParts[0], $tz)->setTime((int) explode(':', $sParts[1])[0], 0, 0);
+                            $pEndDT   = Carbon::parse($eParts[0], $tz)->setTime((int) explode(':', $eParts[1])[0], 0, 0)->addHour();
+
+                            // Skip the primary checkout period (any period overlapping the checkout window)
+                            if ($pStartDT->lt($checkoutEnd) && $pEndDT->gt($checkoutStart)) {
+                                continue;
+                            }
+                            // Skip past or invalid periods
+                            if ($pStartDT->lt(Carbon::now($tz)->startOfHour()) || $pEndDT->lte($pStartDT)) {
+                                continue;
+                            }
+                            // Skip if it conflicts with another user's reservation
+                            if ($asset->overlapsReservations($pStartDT, $pEndDT, $checkoutUserId)) {
+                                continue;
+                            }
+
+                            AssetReservation::create([
+                                'asset_id'       => $asset->id,
+                                'user_id'        => $checkoutUserId,
+                                'reserved_from'  => $pStartDT->format('Y-m-d H:i:s'),
+                                'reserved_until' => $pEndDT->format('Y-m-d H:i:s'),
+                                'status'         => 'active',
+                            ]);
+
+                            $log = new \App\Models\Actionlog;
+                            $log->item_type   = \App\Models\Asset::class;
+                            $log->item_id     = $asset->id;
+                            $log->created_by  = auth()->id();
+                            $log->target_type = \App\Models\User::class;
+                            $log->target_id   = $checkoutUserId;
+                            $userNote = $request->input('note', '');
+                            $log->note = $pStartDT->format('Y-m-d H:i') . ' – ' . $pEndDT->copy()->subMinute()->format('Y-m-d H:i') . "\x00" . $userNote;
+                            $log->logaction('reserved');
+                        }
+                    }
                 }
 
                 if ($returnTo) {

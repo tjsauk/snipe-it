@@ -342,11 +342,25 @@
     @include('partials/assets-assigned')
 
     @php
-    $calendarExistingPeriods = collect($calendarRanges ?? [])->map(function($r) {
+    // Resolve user IDs → usernames for displaying reservation owners in the calendar
+    $checkoutCalUserIds = collect($calendarRanges ?? [])->pluck('user_id')->filter()->unique()->values()->toArray();
+    $checkoutCalUsernames = count($checkoutCalUserIds)
+        ? \App\Models\User::whereIn('id', $checkoutCalUserIds)->pluck('username', 'id')
+        : collect();
+
+    $calendarExistingPeriods = collect($calendarRanges ?? [])->map(function($r) use ($checkoutCalUsernames) {
+        // Ranges sourced from a parent asset carry '_source_asset_name'
+        if (!empty($r['_source_asset_name'])) {
+            $userName = $r['_source_asset_name'];
+        } elseif (isset($r['user_id']) && $checkoutCalUsernames->has($r['user_id'])) {
+            $userName = $checkoutCalUsernames[$r['user_id']];
+        } else {
+            $userName = (string)($r['type'] ?? 'blocked');
+        }
         return [
             'start'    => \Carbon\Carbon::parse($r['from'])->format('Y-m-d H:i'),
             'end'      => $r['to'] ? \Carbon\Carbon::parse($r['to'])->format('Y-m-d H:i') : null,
-            'userName' => (string)($r['type'] ?? 'blocked'),
+            'userName' => $userName,
         ];
     })->values()->toArray();
     @endphp

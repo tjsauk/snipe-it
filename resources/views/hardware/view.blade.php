@@ -1590,15 +1590,72 @@
                             <div class="row">
                                 <div class="col-md-12" style="padding: 15px;">
                                     <?php
-                                    $calendarRanges = $asset->calendarBlockedRanges();
-                                    $calendarExistingPeriods = collect($calendarRanges)->map(function($r) {
+                                    $isCheckedOutToAsset = $asset->assigned_type === \App\Models\Asset::class;
+                                    $parentAsset = ($isCheckedOutToAsset && $asset->assignedTo) ? $asset->assignedTo : null;
+
+                                    $childRawRanges  = $asset->calendarBlockedRanges();
+                                    $parentRawRanges = $parentAsset ? $parentAsset->calendarBlockedRanges() : [];
+
+                                    // Resolve user IDs → usernames in one query
+                                    $allUserIds = collect(array_merge($childRawRanges, $parentRawRanges))
+                                        ->pluck('user_id')->filter()->unique()->values()->toArray();
+                                    $calendarUsernames = count($allUserIds)
+                                        ? \App\Models\User::whereIn('id', $allUserIds)->pluck('username', 'id')
+                                        : collect();
+
+                                    $toCalendarPeriod = function($r) use ($calendarUsernames) {
+                                        if ($r['to'] === null) return null;
                                         return [
                                             'start'    => \Carbon\Carbon::parse($r['from'])->format('Y-m-d H:i'),
-                                            'end'      => $r['to'] ? \Carbon\Carbon::parse($r['to'])->format('Y-m-d H:i') : null,
-                                            'userName' => (string)($r['type'] ?? 'blocked'),
+                                            'end'      => \Carbon\Carbon::parse($r['to'])->format('Y-m-d H:i'),
+                                            'userName' => (isset($r['user_id']) && $calendarUsernames->has($r['user_id']))
+                                                ? $calendarUsernames[$r['user_id']]
+                                                : (($r['type'] ?? '') === 'checkout' ? 'checkout' : 'reserved'),
                                         ];
-                                    })->values()->toArray();
+                                    };
+
+                                    $calendarAssets = [];
+
+                                    // Parent asset's periods (shown with parent's name as label)
+                                    if ($parentAsset) {
+                                        $parentPeriods = collect($parentRawRanges)
+                                            ->map($toCalendarPeriod)->filter()->values()->toArray();
+                                        $calendarAssets[] = [
+                                            'id'             => (string)$parentAsset->id,
+                                            'name'           => $parentAsset->name ?? $parentAsset->asset_tag,
+                                            'existingPeriods' => $parentPeriods,
+                                        ];
+                                    }
+
+                                    // Child asset's own periods — skip the checkout-to-asset entry when checked out to parent
+                                    $childRangesForCalendar = $isCheckedOutToAsset
+                                        ? array_filter($childRawRanges, fn($r) => ($r['type'] ?? '') !== 'checkout')
+                                        : $childRawRanges;
+
+                                    $childPeriods = collect($childRangesForCalendar)
+                                        ->map($toCalendarPeriod)->filter()->values()->toArray();
+
+                                    $calendarAssets[] = [
+                                        'id'             => (string)$asset->id,
+                                        'name'           => $asset->name ?? $asset->asset_tag,
+                                        'existingPeriods' => $childPeriods,
+                                    ];
+
+                                    // Keep $calendarSourceAsset for the info-banner link (not used for calendar data anymore)
+                                    $calendarSourceAsset = $parentAsset ?? $asset;
                                     ?>
+                                    @if($isCheckedOutToAsset && $asset->assignedTo)
+                                    <div class="alert alert-info">
+                                        <i class="fa fa-info-circle"></i>
+                                        This asset is checked out to
+                                        <strong>
+                                            <a href="{{ route('hardware.show', $asset->assignedTo->id) }}">
+                                                {{ $asset->assignedTo->name ?? $asset->assignedTo->asset_tag }}
+                                            </a>
+                                        </strong>.
+                                        The calendar below shows that asset's reservations and schedule.
+                                    </div>
+                                    @endif
                                     <div id="asset-calendar-root"></div>
                                 </div>
                             </div>
@@ -1619,11 +1676,7 @@
             mode: 'view',
             currentUser: @json(Auth::user()->username ?? (string)Auth::id()),
             continuousCutMode: true,
-            assets: [{
-                id: @json((string)$asset->id),
-                name: @json($asset->name),
-                existingPeriods: {!! json_encode($calendarExistingPeriods) !!}
-            }]
+            assets: {!! json_encode($calendarAssets) !!}
         };
         </script>
         <script>
