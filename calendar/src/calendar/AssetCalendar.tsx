@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type {
   Asset,
   CalendarInput,
@@ -94,6 +94,16 @@ type AddEditTarget = {
   assetId: string;
   userName: string;
 } | null;
+
+type EditPeriodChip = {
+  key: string;
+  assetId: string;
+  assetName: string;
+  userName: string;
+  index: number;
+  period: TimePeriod;
+  color: string;
+};
 
 const TIME_COL_W = 62;
 const HEADER_H = 42;
@@ -493,6 +503,56 @@ export default function AssetCalendar({
   const activePeriod =
     periods.find((p: InternalSelectionPeriodDef) => p.id === activePeriodId) ?? periods[0] ?? null;
 
+  const editPeriodChips = useMemo(() => {
+    const chips: EditPeriodChip[] = [];
+
+    visualAssets.forEach((asset: Asset) => {
+      const userBlock = editPeriodsByAssetUser[asset.id] ?? {};
+
+      editableUsers.forEach((userName) => {
+        const periodsForUser = userBlock[userName] ?? [];
+
+        periodsForUser.forEach((period: TimePeriod, index: number) => {
+          chips.push({
+            key: `${asset.id}__${userName}__${index}`,
+            assetId: asset.id,
+            assetName: asset.name,
+            userName,
+            index,
+            period,
+            color: asset.color ?? '#2563eb',
+          });
+        });
+      });
+    });
+
+    chips.sort((a, b) => {
+      const assetDiff = a.assetName.localeCompare(b.assetName);
+      if (assetDiff !== 0) return assetDiff;
+
+      const userDiff = a.userName.localeCompare(b.userName);
+      if (userDiff !== 0) return userDiff;
+
+      const startDiff =
+        parseDateTime(a.period.start).getTime() - parseDateTime(b.period.start).getTime();
+      if (startDiff !== 0) return startDiff;
+
+      return parseDateTime(a.period.end).getTime() - parseDateTime(b.period.end).getTime();
+    });
+
+    return chips;
+  }, [visualAssets, editPeriodsByAssetUser, editableUsers]);
+
+  // Auto-select the first chip when entering edit mode so calendar clicks work immediately
+  // without requiring the user to manually click the chip first.
+  useEffect(() => {
+    if (mode !== 'edit') return;
+    if (selectedEditPeriod !== null) return;
+    if (editPeriodChips.length === 0) return;
+    const first = editPeriodChips[0];
+    setSelectedEditPeriod({ assetId: first.assetId, userName: first.userName, index: first.index });
+  }, [mode, editPeriodChips]);
+
   const draftsByAssetByPeriodId = useMemo(() => {
     const result: Record<string, Record<string, TimePeriod[]>> = {};
     const acceptedDraftsByAsset: Record<string, TimePeriod[]> = {};
@@ -782,46 +842,81 @@ export default function AssetCalendar({
     const clickedHour = startOfHour(date);
 
     if (mode === 'edit') {
-      if (!addForTarget) return;
+      if (addForTarget) {
+        const proposed = buildOneHourPeriod(clickedHour);
+        const asset = visualAssets.find((a) => a.id === addForTarget.assetId);
+        if (!asset) return;
 
-      const proposed = buildOneHourPeriod(clickedHour);
-      const asset = visualAssets.find((a) => a.id === addForTarget.assetId);
-      if (!asset) return;
+        setEditPeriodsByAssetUser((prev) => {
+          const assetBlock = { ...(prev[addForTarget.assetId] ?? {}) };
+          const userPeriods = [...(assetBlock[addForTarget.userName] ?? [])];
+          userPeriods.push(proposed);
+          const newIndex = userPeriods.length - 1;
+          assetBlock[addForTarget.userName] = userPeriods;
 
-      setEditPeriodsByAssetUser((prev) => {
-        const assetBlock = { ...(prev[addForTarget.assetId] ?? {}) };
-        const userPeriods = [...(assetBlock[addForTarget.userName] ?? [])];
-        userPeriods.push(proposed);
-        const newIndex = userPeriods.length - 1;
-        assetBlock[addForTarget.userName] = userPeriods;
+          const blocked = getBlockedReservationsForAsset(asset, editableUsers);
+          const clamped = clampEditPeriodWithinAsset(
+            assetBlock,
+            blocked,
+            addForTarget.userName,
+            newIndex,
+            proposed,
+          );
+          if (!clamped) return prev;
 
-        const blocked = getBlockedReservationsForAsset(asset, editableUsers);
-        const clamped = clampEditPeriodWithinAsset(
-          assetBlock,
-          blocked,
-          addForTarget.userName,
-          newIndex,
-          proposed,
-        );
-        if (!clamped) return prev;
+          userPeriods[newIndex] = clamped;
+          assetBlock[addForTarget.userName] = userPeriods;
 
-        userPeriods[newIndex] = clamped;
-        assetBlock[addForTarget.userName] = userPeriods;
+          return {
+            ...prev,
+            [addForTarget.assetId]: assetBlock,
+          };
+        });
 
-        return {
-          ...prev,
-          [addForTarget.assetId]: assetBlock,
-        };
+        const newIndex =
+          editPeriodsByAssetUser[addForTarget.assetId]?.[addForTarget.userName]?.length ?? 0;
+
+        setSelectedEditPeriod({
+          assetId: addForTarget.assetId,
+          userName: addForTarget.userName,
+          index: newIndex,
+        });
+        setAddForTarget(null);
+        return;
+      }
+
+      // Resolve the active edit period — fall back to the first chip if none is selected yet.
+      let resolved = selectedEditPeriod;
+      if (!resolved && editPeriodChips.length > 0) {
+        const first = editPeriodChips[0];
+        resolved = { assetId: first.assetId, userName: first.userName, index: first.index };
+        setSelectedEditPeriod(resolved);
+      }
+      if (!resolved) return;
+
+      const selectedRange =
+        editPeriodsByAssetUser[resolved.assetId]?.[resolved.userName]?.[resolved.index] ?? null;
+
+      if (!selectedRange) return;
+
+      const currentStart = parseDateTime(selectedRange.start);
+      const currentEnd = parseDateTime(selectedRange.end);
+
+      if (clickedHour < currentStart && !input.lockStart) {
+        updateEditPeriodRange(resolved.assetId, resolved.userName, resolved.index, {
+          start: formatDateTime(clickedHour),
+          end: formatDateTime(currentEnd),
+        });
+        return;
+      }
+
+      // Clicking at or after start always sets the end (shrink or extend).
+      // This matches normal checkout/reserve behaviour where clicking sets expected checkin.
+      updateEditPeriodRange(resolved.assetId, resolved.userName, resolved.index, {
+        start: formatDateTime(currentStart),
+        end: formatDateTime(addMinutes(addHours(clickedHour, 1), -1)),
       });
 
-      const newIndex =
-        editPeriodsByAssetUser[addForTarget.assetId]?.[addForTarget.userName]?.length ?? 0;
-      setSelectedEditPeriod({
-        assetId: addForTarget.assetId,
-        userName: addForTarget.userName,
-        index: newIndex,
-      });
-      setAddForTarget(null);
       return;
     }
 
@@ -910,13 +1005,6 @@ export default function AssetCalendar({
     const sortOrder = nextSortOrderRef.current++;
     setPeriods((prev) => [...prev, { id, requestedRange: null, sortOrder }]);
     setActivePeriodId(id);
-  };
-
-  const toggleAddForTarget = (assetId: string, userName: string) => {
-    setAddForTarget((prev) =>
-      prev?.assetId === assetId && prev?.userName === userName ? null : { assetId, userName },
-    );
-    setSelectedEditPeriod(null);
   };
 
   const applyRepeat = () => {
@@ -1341,31 +1429,44 @@ export default function AssetCalendar({
       {mode === 'edit' && (
         <div className="period-panel">
           <div className="period-chip-list">
-            {visualAssets.flatMap((asset: Asset) =>
-              editableUsers.map((userName) => {
-                const active =
-                  addForTarget?.assetId === asset.id && addForTarget?.userName === userName;
+            {editPeriodChips.map((chip: EditPeriodChip) => {
+              const isSelected =
+                selectedEditPeriod?.assetId === chip.assetId &&
+                selectedEditPeriod?.userName === chip.userName &&
+                selectedEditPeriod?.index === chip.index;
 
-                return (
+              return (
+                <div
+                  key={chip.key}
+                  className={`period-chip edit-period-chip ${isSelected ? 'active' : ''} status-neutral`}
+                >
                   <button
-                    key={`${asset.id}-${userName}`}
                     type="button"
-                    className={`period-chip ${active ? 'active' : ''}`}
-                    onClick={() => toggleAddForTarget(asset.id, userName)}
+                    className="period-chip-main"
+                    onClick={() => {
+                      setSelectedEditPeriod({
+                        assetId: chip.assetId,
+                        userName: chip.userName,
+                        index: chip.index,
+                      });
+                      setAddForTarget(null);
+                    }}
                   >
                     <span
                       className="period-status-dot"
-                      style={{ backgroundColor: asset.color ?? '#2563eb' }}
+                      style={{ backgroundColor: chip.color }}
                     />
-                    <span className="period-chip-meta">
-                      {active
-                        ? `Click calendar for ${asset.name} — ${userName}`
-                        : `Add for ${asset.name} — ${userName}`}
+                    <span className="period-chip-meta edit-period-chip-meta">
+                      <span className="edit-period-chip-asset">{chip.assetName}</span>
+                      <span className="edit-period-chip-user">{chip.userName}</span>
+                      <span className="edit-period-chip-range">
+                        {chip.period.start} → {chip.period.end}
+                      </span>
                     </span>
                   </button>
-                );
-              }),
-            )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -1392,7 +1493,7 @@ export default function AssetCalendar({
                   className="period-chip-remove"
                   onClick={() => removePeriod(period.id)}
                 >
-                  ×
+                  ├ù
                 </button>
               </div>
             ))}

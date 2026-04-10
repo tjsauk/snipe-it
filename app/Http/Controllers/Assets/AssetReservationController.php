@@ -43,7 +43,7 @@ class AssetReservationController extends Controller
             && $asset->assigned_type == \App\Models\User::class;
 
         $isEditableStatus = ($reservation->status === 'active' && $reservation->reserved_until?->isFuture())
-            || ($reservation->status === 'fulfilled' && $reservation->reserved_until?->isFuture() && $assetStillCheckedOutToUser);
+            || ($reservation->status === 'fulfilled' && $assetStillCheckedOutToUser);
         if (!$isEditableStatus) {
             return back()->with('error', 'Only active or ongoing reservations can be edited.');
         }
@@ -103,7 +103,7 @@ class AssetReservationController extends Controller
             && $asset->assigned_type == \App\Models\User::class;
 
         $isEditableStatus = ($reservation->status === 'active' && $reservation->reserved_until?->isFuture())
-            || ($reservation->status === 'fulfilled' && $reservation->reserved_until?->isFuture() && $assetStillCheckedOutToUser);
+            || ($reservation->status === 'fulfilled' && $assetStillCheckedOutToUser);
         if (!$isEditableStatus) {
             return back()->with('error', 'Only active or ongoing reservations can be edited.');
         }
@@ -470,11 +470,23 @@ class AssetReservationController extends Controller
 
         $reservations = AssetReservation::where('asset_id', $asset->id)
             ->where('user_id', $user->id)
-            ->where('reserved_until', '>', now())
-            ->where(function ($q) use ($assetCheckedOutToUser) {
-                $q->where('status', 'active');
-                if ($assetCheckedOutToUser) {
-                    $q->orWhere('status', 'fulfilled');
+            ->where(function ($q) use ($assetCheckedOutToUser, $asset) {
+                // Active reservations must still be in the future
+                $q->where(function ($q2) {
+                    $q2->where('status', 'active')
+                       ->where('reserved_until', '>', now());
+                });
+                // Fulfilled (ongoing checkout) — only reservations whose window covers the current
+                // checkout. reserved_until >= last_checkout ensures we skip old fulfilled rows
+                // from previous checkout cycles (their end was before this checkout started).
+                if ($assetCheckedOutToUser && $asset->last_checkout) {
+                    $q->orWhere(function ($q3) use ($asset) {
+                        $q3->where('status', 'fulfilled')
+                           ->where(function ($q4) use ($asset) {
+                               $q4->whereNull('reserved_until')
+                                  ->orWhere('reserved_until', '>=', $asset->last_checkout);
+                           });
+                    });
                 }
             })
             ->orderBy('reserved_from')

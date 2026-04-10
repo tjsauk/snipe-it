@@ -456,6 +456,9 @@
                         }
                     }
                     $isSuper = auth()->user() && method_exists(auth()->user(), 'isSuperUser') && auth()->user()->isSuperUser();
+                    // Remove overdue assets from the active list — they get their own section
+                    $overdueIds = ($overdue_assets ?? collect())->pluck('id')->flip();
+                    $activeAssets = $activeAssets->filter(fn($a) => !$overdueIds->has($a->id));
                   @endphp
 
                   {{-- Active Reservations: checked-out + active-window reservations --}}
@@ -554,13 +557,11 @@
                             </form>
                           @endif
                           @if ($isSuper)
-                            @if ($asset->activeReservations()->exists())
-                              <a href="{{ route('hardware.reserve.manage', $asset->id) }}?return_to={{ urlencode($returnToAssets) }}"
-                                 class="btn btn-sm btn-warning">
-                                <i class="fa fa-calendar-times-o"></i> Manage reservations
-                              </a>
-                            @endif
-                          @elseif ($userReservation)
+                            <a href="{{ route('hardware.reserve.manage', $asset->id) }}?return_to={{ urlencode($returnToAssets) }}"
+                               class="btn btn-sm btn-warning">
+                              <i class="fa fa-calendar-times-o"></i> Manage reservations
+                            </a>
+                          @elseif ($isCheckedOut || $userReservation)
                             <a href="{{ route('hardware.reserve.manage', $asset->id) }}?return_to={{ urlencode($returnToAssets) }}"
                                class="btn btn-sm btn-warning">
                               <i class="fa fa-calendar-times-o"></i> Manage my reservation
@@ -572,6 +573,88 @@
                     @endforeach
                     </tbody>
                   </table>
+
+                  {{-- Overdue reservations: checked out but expected_checkin has passed --}}
+                  @if (isset($overdue_assets) && $overdue_assets->count() > 0)
+                  <h4 style="padding: 10px 0 5px; color: #c0392b;">
+                    <i class="fa fa-exclamation-triangle"></i> Overdue Reservations
+                  </h4>
+                  <table
+                    data-cookie-id-table="userOverdueReservations"
+                    data-id-table="userOverdueReservations"
+                    data-side-pagination="client"
+                    data-show-footer="true"
+                    id="userOverdueReservations"
+                    class="table table-striped snipe-table">
+                    <caption class="tableCaption sr-only">Overdue Reservations</caption>
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>{{ trans('general.image') }}</th>
+                        <th>{{ trans('general.category') }}</th>
+                        <th>{{ trans('admin/hardware/table.asset_tag') }}</th>
+                        <th>{{ trans('general.name') }}</th>
+                        <th>{{ trans('admin/hardware/table.asset_model') }}</th>
+                        <th>{{ trans('admin/hardware/table.serial') }}</th>
+                        <th>Overdue since</th>
+                        <th class="hidden-print">{{ trans('general.action') }}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @foreach ($overdue_assets as $i => $odAsset)
+                        @php
+                          $odReservation = $odAsset->reservations()
+                              ->where('status', 'fulfilled')
+                              ->where('user_id', $selectedUserId)
+                              ->latest('reserved_from')
+                              ->first();
+                          $odIsSuper = $isSuper;
+                        @endphp
+                        <tr>
+                          <td>{{ $i + 1 }}</td>
+                          <td>
+                            @if ($odAsset->image)
+                              <img src="{{ Storage::disk('public')->url(app('assets_upload_path').e($odAsset->image)) }}" style="max-height:30px;width:auto" class="img-responsive" alt="">
+                            @elseif ($odAsset->model && $odAsset->model->image)
+                              <img src="{{ Storage::disk('public')->url(app('models_upload_path').e($odAsset->model->image)) }}" style="max-height:30px;width:auto" class="img-responsive" alt="">
+                            @endif
+                          </td>
+                          <td>
+                            @if ($odAsset->model && $odAsset->model->category)
+                              {!! $odAsset->model->category->present()->formattedNameLink !!}
+                            @endif
+                          </td>
+                          <td><a href="{{ route('hardware.show', $odAsset->id) }}">{{ $odAsset->asset_tag }}</a></td>
+                          <td><a href="{{ route('hardware.show', $odAsset->id) }}">{{ $odAsset->name }}</a></td>
+                          <td>{!! $odAsset->model ? $odAsset->model->present()->formattedNameLink : trans('general.deleted') !!}</td>
+                          <td>{{ $odAsset->serial }}</td>
+                          <td style="color:#c0392b; font-weight:bold;">
+                            {{ Helper::getFormattedDateObject($odAsset->expected_checkin, 'datetime', false) }}
+                          </td>
+                          <td class="hidden-print">
+                            @can('checkin', $odAsset)
+                              <a href="{{ route('hardware.checkin.create', $odAsset->id) }}?return_to={{ urlencode($returnToAssets) }}"
+                                 class="btn btn-sm btn-primary" style="margin-right:5px;">
+                                {{ trans('admin/hardware/general.checkin') }}
+                              </a>
+                            @endcan
+                            @if ($odIsSuper)
+                              <a href="{{ route('hardware.reserve.manage', $odAsset->id) }}?return_to={{ urlencode($returnToAssets) }}"
+                                 class="btn btn-sm btn-warning">
+                                <i class="fa fa-calendar-times-o"></i> Manage reservations
+                              </a>
+                            @elseif ($odReservation)
+                              <a href="{{ route('hardware.reserve.manage', $odAsset->id) }}?return_to={{ urlencode($returnToAssets) }}"
+                                 class="btn btn-sm btn-warning">
+                                <i class="fa fa-calendar-times-o"></i> Manage my reservation
+                              </a>
+                            @endif
+                          </td>
+                        </tr>
+                      @endforeach
+                    </tbody>
+                  </table>
+                  @endif
 
                   {{-- Upcoming reservations (reservation window starts in the future) --}}
                   @if (isset($reserved_assets) && $reserved_assets->count() > 0)

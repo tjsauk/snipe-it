@@ -31,7 +31,7 @@ button, select, input { font: inherit; }
 .now-line{ position:absolute; left:0; right:0; height:2px; background:#dc2626; z-index:6; pointer-events:none; }
 .now-dot{ position:absolute; left:-3px; top:-4px; width:10px; height:10px; border-radius:999px; background:#dc2626; }
 .reservation-block{ position:absolute; border-radius:4px; color:#fff; font-size:9px; font-weight:700; overflow:hidden; min-width:0; }
-.reservation-block.existing{ opacity:.98; border:3px solid #000; z-index:1; }
+.reservation-block.existing{ opacity:.98; border:3px solid #000; z-index:1; pointer-events:none; }
 .reservation-block.draft{ border:2px solid #111; cursor:move; z-index:4; }
 .reservation-block.draft.active{ border:0; outline:none; }
 .block-label{ padding:2px 4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }

@@ -586,23 +586,134 @@ Route::group(['prefix' => 'v1', 'middleware' => ['api', 'api-throttle:api']], fu
               if (empty($ids)) {
                   return response()->json([]);
               }
+
               $assets = \App\Models\Asset::whereIn('id', $ids)->get();
-              $result = [];
+
+              // Find parent assets: assets that selected assets are checked out TO
+              $parentIds = $assets
+                  ->filter(fn($a) => $a->assigned_type === \App\Models\Asset::class && $a->assigned_to)
+                  ->pluck('assigned_to')
+                  ->unique()
+                  ->diff($assets->pluck('id'))
+                  ->values()
+                  ->toArray();
+
+              $parentAssets = \App\Models\Asset::whereIn('id', $parentIds)->get();
+
+              // Map parent_id -> child assets
+              $childrenByParent = [];
               foreach ($assets as $asset) {
-                  $ranges = $asset->calendarBlockedRanges();
-                  $periods = collect($ranges)->map(function($r) {
+                  if ($asset->assigned_type === \App\Models\Asset::class && $asset->assigned_to) {
+                      $childrenByParent[$asset->assigned_to][] = $asset;
+                  }
+              }
+
+              // Pre-compute all ranges
+              $allAssets = $assets->merge($parentAssets);
+              $allRanges = [];
+              foreach ($allAssets as $a) {
+                  $allRanges[$a->id] = $a->calendarBlockedRanges();
+              }
+
+              // Collect all user IDs needed (checkouts to users + reservation users)
+              $checkoutUserIds = $allAssets
+                  ->filter(fn($a) => $a->assigned_type === \App\Models\User::class && $a->assigned_to)
+                  ->pluck('assigned_to')->unique()->values()->toArray();
+
+              $checkoutAssetIds = $allAssets
+                  ->filter(fn($a) => $a->assigned_type === \App\Models\Asset::class && $a->assigned_to)
+                  ->pluck('assigned_to')->unique()->values()->toArray();
+
+              $reservationUserIds = [];
+              foreach ($allRanges as $ranges) {
+                  foreach ($ranges as $r) {
+                      if (($r['type'] ?? '') === 'reservation' && !empty($r['user_id'])) {
+                          $reservationUserIds[] = $r['user_id'];
+                      }
+                  }
+              }
+
+              // Load all needed users and assets in bulk
+              $allUserIds = array_unique(array_merge($checkoutUserIds, $reservationUserIds));
+              $usersById  = \App\Models\User::whereIn('id', $allUserIds)->get()->keyBy('id');
+              $assetsById = \App\Models\Asset::whereIn('id', $checkoutAssetIds)->get()->keyBy('id');
+
+              // Far future sentinel for open-ended checkouts (no expected_checkin)
+              $openEnd = \Carbon\Carbon::now()->addYear()->format('Y-m-d H:i');
+
+              $userName = function ($user) {
+                  return trim($user->first_name . ' ' . $user->last_name) ?: $user->username;
+              };
+
+              // Display name for whoever the asset is checked out to
+              $checkoutName = function ($asset) use ($usersById, $assetsById, $userName) {
+                  if (!$asset->assigned_to) return null;
+                  if ($asset->assigned_type === \App\Models\User::class) {
+                      $user = $usersById->get($asset->assigned_to);
+                      return $user ? $userName($user) : null;
+                  }
+                  if ($asset->assigned_type === \App\Models\Asset::class) {
+                      $target = $assetsById->get($asset->assigned_to);
+                      return $target ? ($target->name ?? $target->asset_tag) : null;
+                  }
+                  return null;
+              };
+
+              $formatRanges = function ($ranges, $asset) use ($usersById, $checkoutName, $userName, $openEnd) {
+                  return collect($ranges)->map(function ($r) use ($asset, $usersById, $checkoutName, $userName, $openEnd) {
+                      if (($r['type'] ?? '') === 'checkout') {
+                          $name = $checkoutName($asset);
+                      } elseif (($r['type'] ?? '') === 'reservation' && !empty($r['user_id'])) {
+                          $user = $usersById->get($r['user_id']);
+                          $name = $user ? $userName($user) : null;
+                      } else {
+                          $name = null;
+                      }
                       return [
                           'start'    => \Carbon\Carbon::parse($r['from'])->format('Y-m-d H:i'),
-                          'end'      => $r['to'] ? \Carbon\Carbon::parse($r['to'])->format('Y-m-d H:i') : null,
-                          'userName' => (string)($r['type'] ?? 'blocked'),
+                          'end'      => $r['to'] ? \Carbon\Carbon::parse($r['to'])->format('Y-m-d H:i') : $openEnd,
+                          'userName' => $name ?? (string)($r['type'] ?? 'blocked'),
                       ];
                   })->values()->toArray();
+              };
+
+              $result = [];
+
+              foreach ($assets as $asset) {
                   $result[] = [
                       'id'              => (string)$asset->id,
                       'name'            => $asset->name ?? $asset->asset_tag,
+                      'existingPeriods' => $formatRanges($allRanges[$asset->id], $asset),
+                  ];
+              }
+
+              foreach ($parentAssets as $parent) {
+                  $periods = $formatRanges($allRanges[$parent->id], $parent);
+
+                  // Add child asset checkouts as amber periods in the parent
+                  foreach ($childrenByParent[$parent->id] ?? [] as $child) {
+                      if (!$child->last_checkout) continue;
+                      $periods[] = [
+                          'start'    => \Carbon\Carbon::parse($child->last_checkout)->format('Y-m-d H:i'),
+                          'end'      => $child->expected_checkin
+                              ? \Carbon\Carbon::parse($child->expected_checkin)->format('Y-m-d H:i')
+                              : $openEnd,
+                          'userName' => $child->name ?? $child->asset_tag,
+                          'color'    => '#f59e0b',
+                      ];
+                  }
+
+                  $childNames = collect($childrenByParent[$parent->id] ?? [])
+                      ->map(fn($c) => $c->name ?? $c->asset_tag)
+                      ->join(', ');
+
+                  $result[] = [
+                      'id'              => (string)$parent->id,
+                      'name'            => ($parent->name ?? $parent->asset_tag) . ' [↳ ' . $childNames . ']',
                       'existingPeriods' => $periods,
                   ];
               }
+
               return response()->json($result);
           })->name('api.assets.calendar-ranges');
 

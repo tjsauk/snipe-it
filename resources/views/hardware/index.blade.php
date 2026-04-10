@@ -134,7 +134,12 @@
                 return selections.map(function(r) { return r.id; }).filter(Boolean);
             }
         } catch(e) {}
-        return [];
+        // Fallback: read from hidden inputs added by bulk-action checkbox handler
+        var ids = [];
+        jQuery('input[name="ids[]"]').each(function() {
+            if (this.value) ids.push(this.value);
+        });
+        return ids;
     }
 
     function loadAssetsCalendar() {

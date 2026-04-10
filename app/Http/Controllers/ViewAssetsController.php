@@ -167,6 +167,14 @@ class ViewAssetsController extends Controller
             })
             ->get();
 
+        // Overdue: checked out to the user but expected_checkin has already passed
+        $overdueAssets = Asset::with(['model', 'model.category', 'assetstatus'])
+            ->where('assigned_to', $selectedUserId)
+            ->where('assigned_type', \App\Models\User::class)
+            ->whereNotNull('expected_checkin')
+            ->where('expected_checkin', '<', $now)
+            ->get();
+
         // Pass the necessary data to the view
         return view('account/view-assets', [
             'user' => $userToView,
@@ -176,6 +184,7 @@ class ViewAssetsController extends Controller
             'selectedUserId' => $selectedUserId,
             'active_now_assets' => $activeNowAssets,
             'reserved_assets' => $reservedAssets,
+            'overdue_assets' => $overdueAssets,
         ]);
     }
 

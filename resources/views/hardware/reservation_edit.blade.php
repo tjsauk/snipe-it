@@ -97,9 +97,9 @@
                                 <p class="form-control-static" id="selected-period-text">{{ $currentPeriodText }}</p>
                                 <p class="help-block" style="margin-top:4px;">
                                     @if ($can_change_start)
-                                        Drag the block to move it, or drag the bottom handle to extend/shorten. Click <strong>Confirm</strong> to save.
+                                        Drag the block to move it, or drag the bottom handle to extend/shorten. You can also click any empty slot to move the start or extend the end. Click <strong>Confirm</strong> to save.
                                     @else
-                                        Drag the bottom handle to extend the end time. Click <strong>Confirm</strong> to save.
+                                        Drag the bottom handle to extend the end time, or click any empty slot after the block to extend. Click <strong>Confirm</strong> to save.
                                     @endif
                                 </p>
                             </div>
@@ -134,9 +134,10 @@
         // (they will merge on save). Other users' / checkout blocks still block.
         $isOwnUserReservation = isset($r['user_id']) && $r['user_id'] === $reservation->user_id;
         $isOwnCheckout = ($r['type'] ?? '') === 'checkout' && !empty($r['own_checkout']);
+        $openEnd = \Carbon\Carbon::now()->addYear()->format('Y-m-d H:i');
         $entry = [
             'start'    => \Carbon\Carbon::parse($r['from'])->format('Y-m-d H:i'),
-            'end'      => $r['to'] ? \Carbon\Carbon::parse($r['to'])->format('Y-m-d H:i') : null,
+            'end'      => $r['to'] ? \Carbon\Carbon::parse($r['to'])->format('Y-m-d H:i') : $openEnd,
             'userName' => (string)($r['type'] ?? 'blocked'),
         ];
         if ($isOwnUserReservation || $isOwnCheckout) {

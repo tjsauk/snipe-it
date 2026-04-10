@@ -180,7 +180,9 @@ class Asset extends Depreciable
         // -------------------------
         // Active reservations
         // -------------------------
-        $reservationsQuery = $this->activeReservations();
+        // Only include 'active' status reservations — 'fulfilled' ones are already
+        // represented by the checkout block above and would create duplicates.
+        $reservationsQuery = $this->activeReservations()->where('status', 'active');
         if ($excludeReservationId !== null) {
             $reservationsQuery->where('id', '!=', $excludeReservationId);
         }

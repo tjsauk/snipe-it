@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   Asset,
   ExistingGroup,
   ExistingReservation,
@@ -216,24 +216,51 @@ export function buildPeriodsForAsset(
   return result;
 }
 
-export function blockerOverlapExists(
-  wanted: TimePeriod,
-  existing: ExistingReservation[],
-  currentUser: string,
-): boolean {
-  const ws = parseDateTime(wanted.start);
-  const we = endToExclusive(wanted.end);
-  return existing.some((r) => {
-    if (r.noBlock) return false;
-    if (r.userName === currentUser) return false;
-    const rs = parseDateTime(r.start);
-    const re = endToExclusive(r.end);
-    return rs < we && re > ws;
-  });
+export function splitPeriodForWeek(period: TimePeriod, weekStart: Date) {
+  const start = parseDateTime(period.start);
+  const end = parseDateTime(period.end);
+  const weekEnd = endOfDayInclusive(addDays(weekStart, 6));
+
+  if (end < weekStart || start > weekEnd) return [];
+
+  const clippedStart = start < weekStart ? weekStart : start;
+  const clippedEnd = end > weekEnd ? weekEnd : end;
+
+  const parts: TimePeriod[] = [];
+  let currentDay = startOfDay(clippedStart);
+  const finalDay = startOfDay(clippedEnd);
+
+  while (currentDay.getTime() <= finalDay.getTime()) {
+    const partStart = isSameDay(currentDay, clippedStart) ? clippedStart : currentDay;
+    const partEnd = isSameDay(currentDay, clippedEnd) ? clippedEnd : endOfDayInclusive(currentDay);
+    parts.push({
+      start: formatDateTime(partStart),
+      end: formatDateTime(partEnd),
+    });
+    currentDay = addDays(currentDay, 1);
+  }
+
+  return parts;
+}
+
+export function periodToDisplayRect(period: TimePeriod, weekStart: Date) {
+  const start = parseDateTime(period.start);
+  const end = parseDateTime(period.end);
+
+  const dayIndex = Math.floor((startOfDay(start).getTime() - startOfDay(weekStart).getTime()) / (24 * 60 * 60 * 1000));
+  const top = start.getHours() * HOUR_ROW_PX + (start.getMinutes() / 60) * HOUR_ROW_PX;
+  const bottom = end.getHours() * HOUR_ROW_PX + (end.getMinutes() / 60) * HOUR_ROW_PX;
+  const height = Math.max(HOUR_ROW_PX * 0.8, bottom - top + 1);
+
+  return { dayIndex, top, height, start, end };
 }
 
 export function clampHourIndex(v: number) {
   return Math.max(0, Math.min(24 * 7 - 1, v));
+}
+
+export function formatDayHeader(date: Date) {
+  return `${DAY_NAMES[(date.getDay() + 6) % 7]} ${pad(date.getDate())}.${pad(date.getMonth() + 1)}`;
 }
 
 export function buildMovedRange(range: TimePeriod, deltaHours: number): TimePeriod {
@@ -276,6 +303,13 @@ export function buildResizeEndRange(range: TimePeriod, deltaHours: number): Time
   };
 }
 
+export function normalizePeriodsForKey(periods: TimePeriod[]) {
+  return [...periods]
+    .sort((a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end))
+    .map((p) => `${p.start}|${p.end}`)
+    .join(';');
+}
+
 export function clampRangeToMinStart(range: TimePeriod, minStart: Date): TimePeriod | null {
   const start = parseDateTime(range.start);
   const endExclusive = endToExclusive(range.end);
@@ -287,33 +321,6 @@ export function clampRangeToMinStart(range: TimePeriod, minStart: Date): TimePer
     start: formatDateTime(startOfHour(clampedStart)),
     end: formatDateTime(toInclusiveEndFromExclusive(endExclusive)),
   };
-}
-
-export function splitPeriodForWeek(period: TimePeriod, weekStart: Date) {
-  const start = parseDateTime(period.start);
-  const end = parseDateTime(period.end);
-  const weekEnd = endOfDayInclusive(addDays(weekStart, 6));
-
-  if (end < weekStart || start > weekEnd) return [];
-
-  const clippedStart = start < weekStart ? weekStart : start;
-  const clippedEnd = end > weekEnd ? weekEnd : end;
-
-  const parts: TimePeriod[] = [];
-  let currentDay = startOfDay(clippedStart);
-  const finalDay = startOfDay(clippedEnd);
-
-  while (currentDay.getTime() <= finalDay.getTime()) {
-    const partStart = isSameDay(currentDay, clippedStart) ? clippedStart : currentDay;
-    const partEnd = isSameDay(currentDay, clippedEnd) ? clippedEnd : endOfDayInclusive(currentDay);
-    parts.push({
-      start: formatDateTime(partStart),
-      end: formatDateTime(partEnd),
-    });
-    currentDay = addDays(currentDay, 1);
-  }
-
-  return parts;
 }
 
 export function spanWeeks(period: TimePeriod) {
@@ -335,44 +342,20 @@ export function dateInPeriodDay(period: TimePeriod, date: Date) {
   return date >= startOfDay(s) && date <= endOfDayInclusive(e);
 }
 
-export function normalizePeriodsForKey(periods: TimePeriod[]) {
-  return [...periods]
-    .sort((a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end))
-    .map((p) => `${p.start}|${p.end}`)
-    .join(';');
-}
-
-export function periodToDisplayRect(period: TimePeriod, weekStart: Date) {
-  const start = parseDateTime(period.start);
-  const end = parseDateTime(period.end);
-
-  const dayIndex = Math.floor((startOfDay(start).getTime() - startOfDay(weekStart).getTime()) / (24 * 60 * 60 * 1000));
-  const top = start.getHours() * HOUR_ROW_PX + (start.getMinutes() / 60) * HOUR_ROW_PX;
-  const bottom = end.getHours() * HOUR_ROW_PX + (end.getMinutes() / 60) * HOUR_ROW_PX;
-  const height = Math.max(HOUR_ROW_PX * 0.8, bottom - top + 1);
-
-  return { dayIndex, top, height, start, end };
-}
-
-export function formatDayHeader(date: Date) {
-  return `${DAY_NAMES[(date.getDay() + 6) % 7]} ${pad(date.getDate())}.${pad(date.getMonth() + 1)}`;
-}
-
-export function monthDayResolutionBlock(start: Date, end: Date, date: Date) {
-  const sameStartDay = isSameDay(date, start);
-  const sameEndDay = isSameDay(date, end);
-
-  const dayStartHour = sameStartDay ? start.getHours() + start.getMinutes() / 60 : 0;
-  const dayEndHour = sameEndDay ? end.getHours() + (end.getMinutes() + 1) / 60 : 24;
-
-  const startSlot = Math.max(0, Math.floor(dayStartHour / MONTH_SLOT_HOURS));
-  const endSlot = Math.min(MONTH_SLOT_COUNT, Math.ceil(dayEndHour / MONTH_SLOT_HOURS));
-  const widthSlots = Math.max(1, endSlot - startSlot);
-
-  return {
-    leftPct: (startSlot / MONTH_SLOT_COUNT) * 100,
-    widthPct: (widthSlots / MONTH_SLOT_COUNT) * 100,
-  };
+export function blockerOverlapExists(
+  wanted: TimePeriod,
+  existing: ExistingReservation[],
+  currentUser: string,
+): boolean {
+  const ws = parseDateTime(wanted.start);
+  const we = endToExclusive(wanted.end);
+  return existing.some((r) => {
+    if (r.noBlock) return false;
+    if (r.userName === currentUser) return false;
+    const rs = parseDateTime(r.start);
+    const re = endToExclusive(r.end);
+    return rs < we && re > ws;
+  });
 }
 
 export function periodStatusForId(
@@ -421,6 +404,7 @@ export function buildDraftGroups(
   const groups: Array<{
     periodId: string;
     groupKey: string;
+    displayColumnKey: string;
     assets: Asset[];
     periods: TimePeriod[];
     status: PeriodStatus;
@@ -429,21 +413,33 @@ export function buildDraftGroups(
   for (const period of periods) {
     const byAsset = draftsByAssetByPeriodId[period.id] ?? {};
     const status = periodStatusForId(period, assets, draftsByAssetByPeriodId, currentUser);
-    const groupMap = new Map<string, any>();
+
+    const groupMap = new Map<
+      string,
+      {
+        periodId: string;
+        groupKey: string;
+        displayColumnKey: string;
+        assets: Asset[];
+        periods: TimePeriod[];
+        status: PeriodStatus;
+      }
+    >();
 
     for (const asset of assets) {
       const selected = byAsset[asset.id] ?? [];
       if (selected.length === 0) continue;
 
-      const key = normalizePeriodsForKey(selected);
-      const existing = groupMap.get(key);
+      const contentKey = normalizePeriodsForKey(selected);
+      const existing = groupMap.get(contentKey);
 
       if (existing) {
         existing.assets.push(asset);
       } else {
-        groupMap.set(key, {
+        groupMap.set(contentKey, {
           periodId: period.id,
-          groupKey: `${period.id}::${key}`,
+          groupKey: `${period.id}::${contentKey}`,
+          displayColumnKey: '',
           assets: [asset],
           periods: selected,
           status,
@@ -451,8 +447,33 @@ export function buildDraftGroups(
       }
     }
 
-    groups.push(...groupMap.values());
+    for (const group of groupMap.values()) {
+      const assetSetKey = group.assets
+        .map((asset) => asset.id)
+        .sort()
+        .join('|');
+
+      group.displayColumnKey = assetSetKey;
+      groups.push(group);
+    }
   }
 
   return groups;
+}
+
+export function monthDayResolutionBlock(start: Date, end: Date, date: Date) {
+  const sameStartDay = isSameDay(date, start);
+  const sameEndDay = isSameDay(date, end);
+
+  const dayStartHour = sameStartDay ? start.getHours() + start.getMinutes() / 60 : 0;
+  const dayEndHour = sameEndDay ? end.getHours() + (end.getMinutes() + 1) / 60 : 24;
+
+  const startSlot = Math.max(0, Math.floor(dayStartHour / MONTH_SLOT_HOURS));
+  const endSlot = Math.min(MONTH_SLOT_COUNT, Math.ceil(dayEndHour / MONTH_SLOT_HOURS));
+  const widthSlots = Math.max(1, endSlot - startSlot);
+
+  return {
+    leftPct: (startSlot / MONTH_SLOT_COUNT) * 100,
+    widthPct: (widthSlots / MONTH_SLOT_COUNT) * 100,
+  };
 }
