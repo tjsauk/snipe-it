@@ -643,7 +643,7 @@
                                  class="btn btn-sm btn-warning">
                                 <i class="fa fa-calendar-times-o"></i> Manage reservations
                               </a>
-                            @elseif ($odReservation)
+                            @else
                               <a href="{{ route('hardware.reserve.manage', $odAsset->id) }}?return_to={{ urlencode($returnToAssets) }}"
                                  class="btn btn-sm btn-warning">
                                 <i class="fa fa-calendar-times-o"></i> Manage my reservation

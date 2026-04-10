@@ -310,10 +310,10 @@ class AssetsTransformer
 
     public function transformRequestedAssets(Collection $assets, $total)
     {
-        // Ensure list view triggers time-based transitions too
-        $this->runTimeTransitionsIfNeeded($asset);
         $array = [];
         foreach ($assets as $asset) {
+            // Ensure list view triggers time-based transitions too
+            $this->runTimeTransitionsIfNeeded($asset);
             $array[] = self::transformRequestedAsset($asset);
         }
 
