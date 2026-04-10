@@ -763,7 +763,7 @@ class Asset extends Depreciable
             event(new \App\Events\CheckoutableCheckedIn(
                 $this,
                 $target,
-                auth()->user() ?: \App\Models\User::query()->first(),
+                $this->resolveSystemActor(),
                 'Auto checkin (due date reached)',
                 $now->format('Y-m-d H:i:s'),
                 $originalValues
@@ -774,12 +774,13 @@ class Asset extends Depreciable
 
     /**
      * Resolve a "system actor" for background/lazy transitions when no auth user exists.
+     * Always returns the user named "System" (hard-coded system account).
      */
     protected function resolveSystemActor(): ?\App\Models\User
     {
         return \App\Models\User::query()
-            ->where('permissions', 'like', '%"superuser"%')
-            ->orWhere('permissions', 'like', '%superuser%')
+            ->where('username', 'System')
+            ->orWhere('first_name', 'System')
             ->first();
     }
 
@@ -827,21 +828,12 @@ class Asset extends Depreciable
             return;
         }
 
-        // Determine the "admin actor" for logs/auditing.
-        // Prefer the currently authenticated user if present,
-        // otherwise fall back to a system user (first superuser).
-        $admin = auth()->user();
-        if (!$admin) {
-            $admin = \App\Models\User::query()
-                ->where('permissions', 'like', '%"superuser"%') // common pattern in Snipe-IT
-                ->orWhere('permissions', 'like', '%superuser%')
-                ->first();
-        }
+        // Always use the System user as the actor for automatic transitions.
+        $admin = $this->resolveSystemActor();
 
-        // If we cannot find an admin actor, we still should not hard-fail the app.
-        // But checkOut() requires an admin user, so we must bail safely.
+        // If we cannot find the System user, bail safely.
         if (!$admin) {
-            \Log::warning('autoCheckoutActiveReservationIfDue: no admin actor found', [
+            \Log::warning('autoCheckoutActiveReservationIfDue: System user not found', [
                 'asset_id' => $this->id,
                 'reservation_id' => $reservation->id,
             ]);
