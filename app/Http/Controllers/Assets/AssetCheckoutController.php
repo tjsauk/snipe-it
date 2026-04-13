@@ -688,6 +688,13 @@ class AssetCheckoutController extends Controller
                 if ($fulfillReservation && $userReservation) {
                     $userReservation->status = 'fulfilled';
                     $userReservation->save();
+
+                    // Absorb any reservations that are adjacent to or overlapping the checkout end.
+                    // Without this, a user with adjacent reservations (A: now→Apr20, B: Apr20→Apr25)
+                    // would see two items in manage: fulfilled A + active B instead of one merged item.
+                    if ($checkoutUserId && $checkoutEnd) {
+                        $asset->absorbAdjacentReservations($checkoutUserId, $checkoutEnd, $tz);
+                    }
                 }
 
                 // Process any additional future periods from periods_json as reservations.
@@ -880,8 +887,10 @@ class AssetCheckoutController extends Controller
         // Check for overlaps with OTHER users' reservations only.
         // overlapsOngoingCheckout is intentionally skipped: we ARE the ongoing checkout,
         // so checking against ourselves would always return true.
-        $checkoutStart = $asset->last_checkout ? Carbon::parse($asset->last_checkout) : Carbon::now();
-        if ($asset->overlapsReservations($checkoutStart, $newExpectedCheckin, $asset->assigned_to)) {
+        // Use now() as the overlap start: stale past active reservations (reserved_until already
+        // passed) must not block extending an overdue checkout — only future conflicts matter.
+        $overlapCheckFrom = Carbon::now();
+        if ($asset->overlapsReservations($overlapCheckFrom, $newExpectedCheckin, $asset->assigned_to)) {
             return back()->withInput()->with('error', 'The new expected checkin overlaps an existing reservation.');
         }
 

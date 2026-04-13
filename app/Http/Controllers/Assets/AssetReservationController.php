@@ -42,7 +42,9 @@ class AssetReservationController extends Controller
         $assetStillCheckedOutToUser = $asset->assigned_to == $reservation->user_id
             && $asset->assigned_type == \App\Models\User::class;
 
-        $isEditableStatus = ($reservation->status === 'active' && $reservation->reserved_until?->isFuture())
+        // Allow editing active reservations regardless of date (overdue active reservations
+        // should still be editable so they can be extended or converted to checkouts).
+        $isEditableStatus = $reservation->status === 'active'
             || ($reservation->status === 'fulfilled' && $assetStillCheckedOutToUser);
         if (!$isEditableStatus) {
             return back()->with('error', 'Only active or ongoing reservations can be edited.');
@@ -54,7 +56,7 @@ class AssetReservationController extends Controller
             ?: route('hardware.reserve.manage', ['asset' => $asset->id]);
 
         // If reservation hasn't started yet, both dates can be changed.
-        // If it's already ongoing, only the end date can be changed.
+        // If it's already ongoing or overdue, only the end date can be changed.
         $canChangeStart = $reservation->isFutureWindow();
 
         // Get calendar blocked ranges, excluding this reservation so the user
@@ -102,7 +104,7 @@ class AssetReservationController extends Controller
         $assetStillCheckedOutToUser = $asset->assigned_to == $reservation->user_id
             && $asset->assigned_type == \App\Models\User::class;
 
-        $isEditableStatus = ($reservation->status === 'active' && $reservation->reserved_until?->isFuture())
+        $isEditableStatus = $reservation->status === 'active'
             || ($reservation->status === 'fulfilled' && $assetStillCheckedOutToUser);
         if (!$isEditableStatus) {
             return back()->with('error', 'Only active or ongoing reservations can be edited.');
@@ -425,10 +427,31 @@ class AssetReservationController extends Controller
 
         if ($isSuper) {
             $reservations = $asset->reservations()
-                ->where('status', 'active')
-                ->where(function ($q) {
-                    $q->where('reserved_until', '>', now())
-                      ->orWhereNull('reserved_until');
+                ->where(function ($q) use ($asset) {
+                    // Active: future/ongoing or overdue-but-still-checked-out-to-that-user
+                    $q->where(function ($q2) use ($asset) {
+                        $q2->where('status', 'active')
+                           ->where(function ($q3) use ($asset) {
+                               $q3->where('reserved_until', '>', now())
+                                  ->orWhereNull('reserved_until');
+                               if ($asset->assigned_to && $asset->assigned_type == \App\Models\User::class) {
+                                   $q3->orWhere(function ($q4) use ($asset) {
+                                       $q4->where('reserved_until', '<=', now())
+                                          ->where('user_id', $asset->assigned_to);
+                                   });
+                               }
+                           });
+                    });
+                    // Fulfilled: asset is still checked out (covers current checkout cycle)
+                    if ($asset->assigned_to && $asset->assigned_type == \App\Models\User::class && $asset->last_checkout) {
+                        $q->orWhere(function ($q2) use ($asset) {
+                            $q2->where('status', 'fulfilled')
+                               ->where(function ($q3) use ($asset) {
+                                   $q3->whereNull('reserved_until')
+                                      ->orWhere('reserved_until', '>=', $asset->last_checkout);
+                               });
+                        });
+                    }
                 })
                 ->with('user')
                 ->orderBy('reserved_from')
@@ -471,11 +494,22 @@ class AssetReservationController extends Controller
         $reservations = AssetReservation::where('asset_id', $asset->id)
             ->where('user_id', $user->id)
             ->where(function ($q) use ($assetCheckedOutToUser, $asset) {
-                // Active reservations must still be in the future
+                // Active future/ongoing reservations
                 $q->where(function ($q2) {
                     $q2->where('status', 'active')
-                       ->where('reserved_until', '>', now());
+                       ->where(function ($q3) {
+                           $q3->where('reserved_until', '>', now())
+                              ->orWhereNull('reserved_until');
+                       });
                 });
+                // Past active reservations only if asset is still checked out to this user
+                // (checkout without matching reservation fulfillment — needs attention)
+                if ($assetCheckedOutToUser) {
+                    $q->orWhere(function ($q2) use ($asset) {
+                        $q2->where('status', 'active')
+                           ->where('reserved_until', '<=', now());
+                    });
+                }
                 // Fulfilled (ongoing checkout) — only reservations whose window covers the current
                 // checkout. reserved_until >= last_checkout ensures we skip old fulfilled rows
                 // from previous checkout cycles (their end was before this checkout started).

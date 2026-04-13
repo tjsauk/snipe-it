@@ -53,7 +53,9 @@
                                             ?? optional($reservation->user)->email
                                             ?? ('User #'.$reservation->user_id) }}
                                         @if ($reservation->status === 'fulfilled')
-                                            <span class="label label-success" style="margin-left:4px;">Active</span>
+                                            <span class="label label-info" style="margin-left:4px;">Checked Out</span>
+                                        @elseif ($reservation->reserved_until && $reservation->reserved_until->isPast())
+                                            <span class="label label-warning" style="margin-left:4px;">Overdue</span>
                                         @endif
                                     </td>
                                     <td>
