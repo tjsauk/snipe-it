@@ -1,3 +1,11 @@
+# Build the asset calendar JS bundle
+FROM node:22-alpine AS calendar-build
+WORKDIR /calendar
+COPY calendar/package.json calendar/package-lock.json* ./
+RUN npm ci
+COPY calendar/ ./
+RUN npm run build:snipeit
+
 FROM ubuntu:24.04
 LABEL maintainer="Brady Wetherington <bwetherington@grokability.com>"
 
@@ -72,6 +80,7 @@ RUN a2enmod ssl
 RUN a2ensite 001-default-ssl.conf
 
 COPY . /var/www/html
+COPY --from=calendar-build /public/vendor/asset-calendar/ /var/www/html/public/vendor/asset-calendar/
 
 RUN a2enmod rewrite
 
