@@ -2,13 +2,16 @@
 
 namespace App\Http\Controllers\Assets;
 
+use App\Events\CheckoutableCheckedIn;
 use App\Helpers\Helper;
 use App\Http\Controllers\CheckInOutRequest;
 use App\Http\Controllers\Controller;
 use App\Models\Asset;
 use App\Models\AssetModel;
+use App\Models\AssetReservation;
 use App\Models\Statuslabel;
 use App\Models\Setting;
+use App\Models\User;
 use App\View\Label;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -65,6 +68,21 @@ class BulkAssetsController extends Controller
 
             $request->session()->flashInput(['selected_assets' => $asset_ids]);
             return redirect()->route('hardware.bulkcheckout.show');
+        }
+
+        if ($request->input('bulk_actions') === 'basket') {
+            $current = session('asset_basket', []);
+            session()->put('asset_basket', array_values(array_unique(array_merge(
+                $current,
+                array_map('intval', array_filter((array) $asset_ids))
+            ))));
+            return redirect()->route('hardware.basket.reserve.show')
+                ->with('success', trans('general.basket_added_multiple', ['count' => count((array) $asset_ids)]));
+        }
+
+        if ($request->input('bulk_actions') === 'checkin') {
+            $request->session()->flashInput(['selected_assets' => $asset_ids]);
+            return redirect()->route('hardware.bulkcheckin.show');
         }
 
         if ($request->input('bulk_actions') === 'maintenance') {
@@ -804,5 +822,360 @@ class BulkAssetsController extends Controller
             ->with('statuslabel_list', Helper::statusLabelList())
             ->with('models', $models->pluck(['model']))
             ->with('modelNames', $modelNames);
+    }
+
+    /**
+     * Show Bulk Checkin Page
+     */
+    public function showBulkCheckin(Request $request): View|RedirectResponse
+    {
+        $this->authorize('checkin', Asset::class);
+
+        $asset_ids = old('selected_assets', []);
+
+        if (empty($asset_ids)) {
+            return redirect()->route('hardware.index')
+                ->with('error', trans('admin/hardware/message.update.no_assets_selected'));
+        }
+
+        // Only include assets that are actually checked out
+        $assets = Asset::with(['assignedTo', 'model'])
+            ->whereIn('id', $asset_ids)
+            ->whereNotNull('assigned_to')
+            ->get();
+
+        if ($assets->isEmpty()) {
+            return redirect()->route('hardware.index')
+                ->with('error', trans('admin/hardware/message.checkin.already_checked_in'));
+        }
+
+        return view('hardware/bulk-checkin', compact('assets'));
+    }
+
+    /**
+     * Process Bulk Checkin
+     */
+    public function storeBulkCheckin(Request $request): RedirectResponse
+    {
+        $this->authorize('checkin', Asset::class);
+
+        $assetIds = array_filter((array) $request->get('selected_assets', []));
+
+        if (empty($assetIds)) {
+            return redirect()->route('hardware.bulkcheckin.show')
+                ->with('error', trans('admin/hardware/message.update.no_assets_selected'));
+        }
+
+        $admin      = auth()->user();
+        $note       = e($request->get('note', ''));
+        $checkin_at = Carbon::now()->format('Y-m-d H:i:s');
+        $successCount = 0;
+        $errors       = [];
+
+        DB::transaction(function () use ($assetIds, $admin, $note, $checkin_at, &$successCount, &$errors) {
+            foreach ($assetIds as $assetId) {
+                $asset = Asset::with('assignedTo')->find($assetId);
+
+                if (!$asset || is_null($asset->assigned_to)) {
+                    continue;
+                }
+
+                try {
+                    $this->authorize('checkin', $asset);
+                } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+                    $errors[] = "Asset #{$assetId}: not authorized.";
+                    continue;
+                }
+
+                $target         = $asset->assignedTo;
+                $originalValues = $asset->getRawOriginal();
+
+                $asset->expected_checkin = null;
+                $asset->assignedTo()->disassociate($asset);
+                $asset->accepted     = null;
+                $asset->last_checkin = $checkin_at;
+                $asset->location_id  = $asset->rtd_location_id;
+
+                if ($asset->save()) {
+                    event(new CheckoutableCheckedIn(
+                        $asset, $target, $admin, $note, $checkin_at, $originalValues
+                    ));
+
+                    // Cancel active/fulfilled reservations within the current window
+                    $now = now();
+                    $asset->reservations()
+                        ->whereIn('status', ['active', 'fulfilled'])
+                        ->where('reserved_from', '<=', $now)
+                        ->where('reserved_until', '>', $now)
+                        ->update(['status' => 'cancelled']);
+
+                    $successCount++;
+                } else {
+                    $errors = array_merge($errors, $asset->getErrors()->toArray());
+                }
+            }
+        });
+
+        if ($successCount === 0) {
+            return redirect()->route('hardware.bulkcheckin.show')
+                ->withInput()
+                ->with('error', trans('admin/hardware/message.checkin.error'));
+        }
+
+        if (!empty($errors)) {
+            Log::warning('Bulk checkin partial errors', $errors);
+        }
+
+        return redirect()->route('hardware.index')
+            ->with('success', trans('general.bulk_checkin_success', ['count' => $successCount]));
+    }
+
+    /**
+     * Show Bulk Reserve Page
+     */
+    public function showReserve(Request $request): View|RedirectResponse
+    {
+        $this->authorize('view', Asset::class);
+
+        $asset_ids = old('selected_assets', []);
+
+        if (empty($asset_ids)) {
+            return redirect()->route('hardware.index')->with('error', trans('admin/hardware/message.update.no_assets_selected'));
+        }
+
+        $assets = Asset::with('model')->whereIn('id', $asset_ids)->get();
+        $mode   = 'bulk';
+
+        return view('hardware/bulk-reserve', compact('assets', 'mode'));
+    }
+
+    /**
+     * Store Bulk Reserve
+     *
+     * Per-asset: creates reservations for each period in the calendar output,
+     * skipping any periods the calendar already excluded due to other users'
+     * conflicts.  Own adjacent reservations and ongoing checkouts are merged.
+     */
+    public function storeReserve(Request $request): RedirectResponse
+    {
+        $this->authorize('view', Asset::class);
+
+        $assetIds       = array_filter((array) $request->get('selected_assets', []));
+        $periodsRaw     = $request->input('periods_json');
+        $checkoutToType = $request->get('checkout_to_type', 'user');
+
+        if (empty($assetIds)) {
+            return redirect()->route('hardware.bulkreserve.show')
+                ->with('error', trans('admin/hardware/message.update.no_assets_selected'));
+        }
+
+        $tz    = config('app.timezone');
+        $admin = auth()->user();
+
+        // Determine checkout target safely (findOrFail would throw on missing value)
+        try {
+            $target = $this->determineCheckoutTarget();
+        } catch (\Exception $e) {
+            $target = $admin;
+            $checkoutToType = 'user';
+        }
+
+        // Asset checkout: no calendar needed — inherit dates from target asset
+        if ($checkoutToType === 'asset') {
+            $successCount = 0;
+            foreach ($assetIds as $assetId) {
+                $asset = Asset::find($assetId);
+                if (!$asset || !$asset->availableForCheckout()) {
+                    continue;
+                }
+                $checkoutAt = \Carbon\Carbon::now($tz)->format('Y-m-d H:i:s');
+                if ($asset->checkOut($target, $admin, $checkoutAt, null)) {
+                    $successCount++;
+                }
+            }
+            if ($successCount === 0) {
+                return redirect()->route('hardware.bulkreserve.show')
+                    ->with('error', 'No assets could be checked out.');
+            }
+            return redirect()->route('hardware.index')
+                ->with('success', trans('general.bulk_reserve_success', ['count' => $successCount]));
+        }
+
+        if (empty($periodsRaw)) {
+            return redirect()->route('hardware.bulkreserve.show')
+                ->withInput()
+                ->with('error', 'No periods selected. Please drag a period in the calendar.');
+        }
+
+        $periodsData = json_decode($periodsRaw, true);
+
+        if (!is_array($periodsData) || empty($periodsData)) {
+            return redirect()->route('hardware.bulkreserve.show')
+                ->withInput()
+                ->with('error', 'Invalid period data. Please try again.');
+        }
+
+        if ($checkoutToType === 'user' && $target) {
+            $reservationUserId = $target->id;
+        } else {
+            $reservationUserId = $admin->id;
+        }
+
+        $successCount = 0;
+        $skippedCount = 0;
+        $errors = [];
+
+        DB::transaction(function () use (
+            $periodsData, $assetIds, $tz, $reservationUserId, $target, $admin, $checkoutToType,
+            &$successCount, &$skippedCount, &$errors
+        ) {
+            // Index submitted asset data by asset ID for quick lookup
+            $assetPeriodMap = [];
+            foreach ($periodsData as $assetData) {
+                $aid = (string) ($assetData['id'] ?? '');
+                if ($aid) {
+                    $assetPeriodMap[$aid] = $assetData['selectedPeriods'] ?? [];
+                }
+            }
+
+            foreach ($assetIds as $assetId) {
+                $asset = Asset::find($assetId);
+                if (!$asset) {
+                    continue;
+                }
+
+                $periods = $assetPeriodMap[(string) $assetId] ?? [];
+
+                if (empty($periods)) {
+                    // Calendar found no available slots for this asset
+                    $skippedCount++;
+                    continue;
+                }
+
+                foreach ($periods as $period) {
+                    $startStr = $period['start'] ?? null;
+                    $endStr   = $period['end'] ?? null;
+
+                    if (!$startStr || !$endStr) {
+                        continue;
+                    }
+
+                    // Calendar "end" is inclusive last minute (e.g. "2024-12-20 17:59")
+                    // DB stores exclusive boundary → add 1 minute
+                    $startDT  = Carbon::parse($startStr, $tz);
+                    $endBound = Carbon::parse($endStr, $tz)->addMinute();
+
+                    if ($endBound->lte($startDT)) {
+                        continue;
+                    }
+
+                    // Past/current hour → immediate checkout
+                    if ($startDT->lte(Carbon::now($tz)->startOfHour())) {
+                        if (!$asset->availableForCheckout()) {
+                            $errors[] = "Asset #{$assetId}: not available for checkout, skipped.";
+                            continue;
+                        }
+                        $checkoutAt      = Carbon::now($tz)->format('Y-m-d H:i:s');
+                        $expectedCheckin = $endBound->copy()->subMinute()->format('Y-m-d H:i:s');
+                        if ($asset->checkOut($target, $admin, $checkoutAt, $expectedCheckin)) {
+                            $successCount++;
+                        } else {
+                            $errors[] = "Asset #{$assetId}: checkout failed.";
+                        }
+                        continue;
+                    }
+
+                    // --- Merge with own ongoing checkout (adjacent or overlapping) ---
+                    $ownCheckoutActive = !is_null($asset->assigned_to)
+                        && $asset->assigned_type === User::class
+                        && $asset->assigned_to == $reservationUserId
+                        && $asset->last_checkout;
+
+                    if ($ownCheckoutActive) {
+                        $coEnd = $asset->expected_checkin
+                            ? Carbon::parse($asset->expected_checkin, $tz)
+                            : null;
+
+                        if (!$coEnd || $startDT->lte($coEnd)) {
+                            $mergedEnd = (!$coEnd || $endBound->gt($coEnd)) ? $endBound : $coEnd;
+                            $asset->expected_checkin = $mergedEnd->format('Y-m-d H:i:s');
+                            $asset->save();
+                            $asset->absorbAdjacentReservations($reservationUserId, $mergedEnd, $tz);
+                            $successCount++;
+                            continue;
+                        }
+                    }
+
+                    // --- Merge with own existing active reservations that overlap/are adjacent ---
+                    $existingOwn = $asset->reservations()
+                        ->where('status', 'active')
+                        ->where('user_id', $reservationUserId)
+                        ->where('reserved_from', '<', $endBound->format('Y-m-d H:i:s'))
+                        ->where('reserved_until', '>', $startDT->format('Y-m-d H:i:s'))
+                        ->get();
+
+                    if ($existingOwn->isNotEmpty()) {
+                        $mergeStart = $startDT->copy();
+                        $mergeEnd   = $endBound->copy();
+                        foreach ($existingOwn as $own) {
+                            $ownFrom  = Carbon::parse($own->reserved_from, $tz);
+                            $ownUntil = Carbon::parse($own->reserved_until, $tz);
+                            if ($ownFrom->lt($mergeStart)) {
+                                $mergeStart = $ownFrom;
+                            }
+                            if ($ownUntil->gt($mergeEnd)) {
+                                $mergeEnd = $ownUntil;
+                            }
+                        }
+
+                        foreach ($existingOwn as $own) {
+                            $own->update(['status' => 'cancelled']);
+                        }
+
+                        AssetReservation::create([
+                            'asset_id'       => $asset->id,
+                            'user_id'        => $reservationUserId,
+                            'reserved_from'  => $mergeStart->format('Y-m-d H:i:s'),
+                            'reserved_until' => $mergeEnd->format('Y-m-d H:i:s'),
+                            'status'         => 'active',
+                        ]);
+                        $successCount++;
+                        continue;
+                    }
+
+                    // --- Create new reservation ---
+                    AssetReservation::create([
+                        'asset_id'       => $asset->id,
+                        'user_id'        => $reservationUserId,
+                        'reserved_from'  => $startDT->format('Y-m-d H:i:s'),
+                        'reserved_until' => $endBound->format('Y-m-d H:i:s'),
+                        'status'         => 'active',
+                    ]);
+                    $successCount++;
+                }
+            }
+        });
+
+        if (!empty($errors)) {
+            // Log non-fatal warnings but still count as partial success
+            Log::warning('Bulk reserve partial errors', $errors);
+        }
+
+        if ($successCount === 0) {
+            return redirect()->route('hardware.bulkreserve.show')
+                ->withInput()
+                ->with('error', 'No reservations were created. Assets may have no available slots in the selected period.');
+        }
+
+        if ($skippedCount > 0) {
+            return redirect()->route('hardware.index')
+                ->with('warning', trans('general.bulk_reserve_partial', [
+                    'ok'    => $successCount,
+                    'total' => $successCount + $skippedCount,
+                ]));
+        }
+
+        return redirect()->route('hardware.index')
+            ->with('success', trans('general.bulk_reserve_success', ['count' => $successCount]));
     }
 }

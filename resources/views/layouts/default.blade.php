@@ -1053,6 +1053,60 @@
 
 
 
+                            <!-- Asset Basket -->
+                            @auth
+                            @php
+                                $basketIds = session('asset_basket', []);
+                                $basketNavAssets = $basketIds
+                                    ? \App\Models\Asset::whereIn('id', $basketIds)->get(['id', 'name', 'asset_tag'])
+                                    : collect();
+                            @endphp
+                            <li class="dropdown basket-menu">
+                                <a href="{{ route('hardware.basket.reserve.show') }}" class="dropdown-toggle" data-toggle="dropdown" title="{{ trans('general.basket_reserve') }}">
+                                    <i class="fa fa-shopping-cart"></i>
+                                    @if($basketNavAssets->count() > 0)
+                                        <span class="label label-primary">{{ $basketNavAssets->count() }}</span>
+                                    @endif
+                                </a>
+                                <ul class="dropdown-menu" style="min-width:280px; right:0; left:auto;">
+                                    @if($basketNavAssets->isEmpty())
+                                        <li class="header">{{ trans('general.basket_empty') }}</li>
+                                    @else
+                                        <li class="header">{{ trans_choice('general.basket_count', $basketNavAssets->count(), ['count' => $basketNavAssets->count()]) }}</li>
+                                        <li>
+                                            <ul class="menu" style="max-height:200px; overflow-y:auto;">
+                                                @foreach($basketNavAssets as $ba)
+                                                    <li style="display:flex; align-items:center; padding: 0 8px;">
+                                                        <a href="{{ route('hardware.show', $ba->id) }}" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                                                            {{ $ba->asset_tag }}@if($ba->name) &ndash; {{ $ba->name }}@endif
+                                                        </a>
+                                                        <form method="POST" action="{{ route('hardware.basket.remove', $ba->id) }}" style="margin:0; flex-shrink:0;">
+                                                            @csrf
+                                                            @method('DELETE')
+                                                            <button type="submit" class="btn btn-xs btn-link" title="{{ trans('general.basket_remove') }}" style="color:#999; padding:2px 4px;">
+                                                                <i class="fa fa-times"></i>
+                                                            </button>
+                                                        </form>
+                                                    </li>
+                                                @endforeach
+                                            </ul>
+                                        </li>
+                                        <li class="footer" style="padding:8px; display:flex; gap:8px; align-items:center;">
+                                            <a href="{{ route('hardware.basket.reserve.show') }}" class="btn btn-xs btn-primary">
+                                                <i class="fa fa-calendar-plus-o"></i> {{ trans('general.basket_reserve') }}
+                                            </a>
+                                            <form method="POST" action="{{ route('hardware.basket.clear') }}" style="margin:0;">
+                                                @csrf
+                                                <button class="btn btn-xs btn-default" type="submit">
+                                                    <i class="fa fa-trash"></i> {{ trans('general.basket_clear') }}
+                                                </button>
+                                            </form>
+                                        </li>
+                                    @endif
+                                </ul>
+                            </li>
+                            @endauth
+
                             <!-- User Account: style can be found in dropdown.less -->
                             @if (Auth::check())
                                 <li class="dropdown user user-menu">

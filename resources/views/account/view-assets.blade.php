@@ -461,6 +461,22 @@
                     $activeAssets = $activeAssets->filter(fn($a) => !$overdueIds->has($a->id));
                   @endphp
 
+                  {{-- Bulk checkin toolbar --}}
+                  @can('checkin', \App\Models\Asset::class)
+                  <form id="viewAssetsBulkCheckinForm" method="POST"
+                        action="{{ route('hardware.bulkcheckin.store') }}" style="margin-bottom:8px;">
+                    @csrf
+                    <div id="viewAssetsBulkCheckinBar" style="display:none; margin-bottom:8px;">
+                        <button type="submit" class="btn btn-sm btn-primary">
+                            <i class="fa fa-sign-in"></i> {{ trans('general.bulk_checkin') }}
+                            (<span id="viewAssetsCheckedCount">0</span>)
+                        </button>
+                        <button type="button" id="viewAssetsClearSelection" class="btn btn-sm btn-default" style="margin-left:4px;">
+                            {{ trans('button.cancel') }}
+                        </button>
+                    </div>
+                  @endcan
+
                   {{-- Active Reservations: checked-out + active-window reservations --}}
                   <table
                     data-cookie-id-table="userActiveAssets"
@@ -481,6 +497,11 @@
                     </caption>
                     <thead>
                       <tr>
+                        @can('checkin', \App\Models\Asset::class)
+                        <th class="col-md-1 hidden-print">
+                            <input type="checkbox" id="viewAssetsCheckAll" title="Select all checked-out">
+                        </th>
+                        @endcan
                         <th class="col-md-1">#</th>
                         <th class="col-md-1">{{ trans('general.image') }}</th>
                         <th class="col-md-2" data-switchable="true" data-visible="true">{{ trans('general.category') }}</th>
@@ -512,6 +533,17 @@
                         }
                       @endphp
                       <tr>
+                        @can('checkin', \App\Models\Asset::class)
+                        <td class="hidden-print">
+                            @if($isCheckedOut)
+                                <input type="checkbox"
+                                       class="view-asset-checkin-cb"
+                                       name="selected_assets[]"
+                                       form="viewAssetsBulkCheckinForm"
+                                       value="{{ $asset->id }}">
+                            @endif
+                        </td>
+                        @endcan
                         <td>{{ $counter }}</td>
                         <td>
                           @if ($asset->image)
@@ -573,6 +605,9 @@
                     @endforeach
                     </tbody>
                   </table>
+                  @can('checkin', \App\Models\Asset::class)
+                  </form>{{-- #viewAssetsBulkCheckinForm --}}
+                  @endcan
 
                   {{-- Overdue reservations: checked out but expected_checkin has passed --}}
                   @if (isset($overdue_assets) && $overdue_assets->count() > 0)
@@ -1025,4 +1060,54 @@
     });
   })();
   </script>
+
+  {{-- Bulk checkin checkbox logic --}}
+  @can('checkin', \App\Models\Asset::class)
+  <script>
+  (function () {
+      var checkAll  = document.getElementById('viewAssetsCheckAll');
+      var bar       = document.getElementById('viewAssetsBulkCheckinBar');
+      var countEl   = document.getElementById('viewAssetsCheckedCount');
+      var clearBtn  = document.getElementById('viewAssetsClearSelection');
+
+      function updateBar() {
+          var checked = document.querySelectorAll('.view-asset-checkin-cb:checked');
+          var n = checked.length;
+          if (countEl) countEl.textContent = n;
+          if (bar) bar.style.display = n > 0 ? '' : 'none';
+      }
+
+      if (checkAll) {
+          checkAll.addEventListener('change', function () {
+              document.querySelectorAll('.view-asset-checkin-cb').forEach(function (cb) {
+                  cb.checked = checkAll.checked;
+              });
+              updateBar();
+          });
+      }
+
+      document.querySelectorAll('.view-asset-checkin-cb').forEach(function (cb) {
+          cb.addEventListener('change', function () {
+              updateBar();
+              if (checkAll) {
+                  var all  = document.querySelectorAll('.view-asset-checkin-cb');
+                  var chk  = document.querySelectorAll('.view-asset-checkin-cb:checked');
+                  checkAll.indeterminate = chk.length > 0 && chk.length < all.length;
+                  checkAll.checked       = chk.length === all.length;
+              }
+          });
+      });
+
+      if (clearBtn) {
+          clearBtn.addEventListener('click', function () {
+              document.querySelectorAll('.view-asset-checkin-cb').forEach(function (cb) {
+                  cb.checked = false;
+              });
+              if (checkAll) { checkAll.checked = false; checkAll.indeterminate = false; }
+              updateBar();
+          });
+      }
+  })();
+  </script>
+  @endcan
 @stop

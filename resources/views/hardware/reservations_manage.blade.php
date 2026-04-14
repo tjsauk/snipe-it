@@ -33,10 +33,24 @@
                     @if ($reservations->isEmpty() && $checkouts->isEmpty())
                         <p>No active reservations or checkouts for this asset.</p>
                     @else
+                        {{-- Bulk cancel bar --}}
+                        <div id="manageBulkCancelBar" style="display:none; margin-bottom:8px;">
+                            <button type="button" id="manageBulkCancelBtn" class="btn btn-sm btn-danger">
+                                <i class="fa fa-ban"></i> Cancel selected
+                                (<span id="manageCancelCount">0</span>)
+                            </button>
+                            <button type="button" id="manageClearCancelBtn" class="btn btn-sm btn-default" style="margin-left:4px;">
+                                Clear selection
+                            </button>
+                        </div>
+
                         <div class="table-responsive">
                         <table class="table table-striped" style="white-space: nowrap;">
                             <thead>
                             <tr>
+                                <th class="hidden-print" style="width:30px;">
+                                    <input type="checkbox" id="manageSelectAll" title="Select all cancellable">
+                                </th>
                                 <th>Type</th>
                                 <th>User</th>
                                 <th>From</th>
@@ -47,6 +61,14 @@
                             <tbody>
                             @foreach ($reservations as $reservation)
                                 <tr>
+                                    <td class="hidden-print">
+                                        @if ($reservation->status !== 'fulfilled')
+                                            <input type="checkbox"
+                                                   class="manage-cancel-cb"
+                                                   data-asset-id="{{ $asset->id }}"
+                                                   data-reservation-id="{{ $reservation->id }}">
+                                        @endif
+                                    </td>
                                     <td>Reservation</td>
                                     <td>
                                         {{ optional($reservation->user)->present()->fullName
@@ -92,6 +114,7 @@
                             @endforeach
                             @foreach ($checkouts as $checkout)
                                 <tr>
+                                    <td class="hidden-print"></td>
                                     <td>Checkout</td>
                                     <td>
                                         {{ optional($checkout->user)->present()->fullName
@@ -132,4 +155,74 @@
 
         </div>
     </div>
+@stop
+
+@section('moar_scripts')
+<script>
+(function () {
+    var csrfToken  = (document.querySelector('meta[name="csrf-token"]') || {}).getAttribute('content') || '';
+    var selectAll  = document.getElementById('manageSelectAll');
+    var cancelBar  = document.getElementById('manageBulkCancelBar');
+    var countEl    = document.getElementById('manageCancelCount');
+    var cancelBtn  = document.getElementById('manageBulkCancelBtn');
+    var clearBtn   = document.getElementById('manageClearCancelBtn');
+
+    function updateBar() {
+        var n = document.querySelectorAll('.manage-cancel-cb:checked').length;
+        if (countEl)   countEl.textContent = n;
+        if (cancelBar) cancelBar.style.display = n > 0 ? '' : 'none';
+    }
+
+    function syncSelectAll() {
+        if (!selectAll) return;
+        var all = document.querySelectorAll('.manage-cancel-cb');
+        var chk = document.querySelectorAll('.manage-cancel-cb:checked');
+        selectAll.indeterminate = chk.length > 0 && chk.length < all.length;
+        selectAll.checked       = all.length > 0 && chk.length === all.length;
+    }
+
+    if (selectAll) {
+        selectAll.addEventListener('change', function () {
+            document.querySelectorAll('.manage-cancel-cb').forEach(function (cb) {
+                cb.checked = selectAll.checked;
+            });
+            updateBar();
+        });
+    }
+
+    document.querySelectorAll('.manage-cancel-cb').forEach(function (cb) {
+        cb.addEventListener('change', function () {
+            updateBar();
+            syncSelectAll();
+        });
+    });
+
+    if (clearBtn) {
+        clearBtn.addEventListener('click', function () {
+            document.querySelectorAll('.manage-cancel-cb').forEach(function (cb) { cb.checked = false; });
+            if (selectAll) { selectAll.checked = false; selectAll.indeterminate = false; }
+            updateBar();
+        });
+    }
+
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', function () {
+            var checked = Array.from(document.querySelectorAll('.manage-cancel-cb:checked'));
+            if (checked.length === 0) return;
+            if (!confirm('Cancel ' + checked.length + ' reservation(s)?')) return;
+
+            Promise.all(checked.map(function (cb) {
+                return fetch('/hardware/' + cb.getAttribute('data-asset-id') + '/reservations/' + cb.getAttribute('data-reservation-id'), {
+                    method: 'DELETE',
+                    headers: { 'X-CSRF-TOKEN': csrfToken, 'X-Requested-With': 'XMLHttpRequest' },
+                });
+            })).then(function () {
+                window.location.reload();
+            }).catch(function () {
+                window.location.reload();
+            });
+        });
+    }
+})();
+</script>
 @stop

@@ -546,8 +546,7 @@ class AssetReservationController extends Controller
         }
 
         if ($reservations->isEmpty() && $checkouts->isEmpty()) {
-            return redirect($returnTo)
-                ->with('error', 'You do not have any active reservations or checkouts to manage.');
+            return redirect($returnTo);
         }
 
         return view('hardware/reservations_manage', [

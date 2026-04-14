@@ -10,6 +10,7 @@ use Tabuna\Breadcrumbs\Trail;
 use Illuminate\Support\Facades\Route;
 use App\Models\Asset;
 use App\Http\Controllers\Assets\AssetReservationController;
+use App\Http\Controllers\Assets\BasketController;
 
 
 /*
@@ -120,6 +121,18 @@ Route::group(
             [AssetCheckoutController::class, 'store']
         )->name('hardware.checkout.store');
 
+        // Basket (must be before {asset}/reserve to avoid route conflict)
+        Route::post('basket/clear', [BasketController::class, 'clear'])
+            ->name('hardware.basket.clear');
+        Route::get('basket/reserve', [BasketController::class, 'showReserve'])
+            ->name('hardware.basket.reserve.show');
+        Route::post('basket/reserve', [BasketController::class, 'storeReserve'])
+            ->name('hardware.basket.reserve.store');
+        Route::post('basket/{asset}', [BasketController::class, 'add'])
+            ->name('hardware.basket.add');
+        Route::delete('basket/{asset}', [BasketController::class, 'remove'])
+            ->name('hardware.basket.remove');
+
         // Reserve = use checkout page, but in reservation mode
         Route::get('{asset}/reserve', [AssetCheckoutController::class, 'create'])
             ->name('hardware.reserve.create');
@@ -207,6 +220,17 @@ Route::group(
         Route::post('bulkcheckout',
             [BulkAssetsController::class, 'storeCheckout']
         )->name('hardware.bulkcheckout.store');
+
+        Route::get('bulkreserve', [BulkAssetsController::class, 'showReserve'])
+            ->name('hardware.bulkreserve.show');
+        Route::post('bulkreserve', [BulkAssetsController::class, 'storeReserve'])
+            ->name('hardware.bulkreserve.store');
+
+        // Bulk checkin
+        Route::get('bulkcheckin', [BulkAssetsController::class, 'showBulkCheckin'])
+            ->name('hardware.bulkcheckin.show');
+        Route::post('bulkcheckin', [BulkAssetsController::class, 'storeBulkCheckin'])
+            ->name('hardware.bulkcheckin.store');
 
     });
 

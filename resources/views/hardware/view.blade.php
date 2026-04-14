@@ -282,13 +282,63 @@
                                 @endphp
 
                                 @if (($asset->assetstatus) && ($asset->assetstatus->deployable=='1') && ($asset->deleted_at==''))
-                                    {{-- Reserve: reuse checkout form in reservation mode --}}
+                                    @php
+                                        $basketIds      = session('asset_basket', []);
+                                        $basketHasItems = !empty($basketIds);
+                                        $inBasket       = in_array($asset->id, $basketIds);
+                                    @endphp
+
+                                    {{-- Reserve button: if basket has items → go to basket reserve --}}
                                     <div class="col-md-12 hidden-print" style="padding-top: 5px;">
-                                        <a href="{{ route('hardware.reserve.create', ['asset' => $asset->id, 'reserve' => 1, 'return_to' => url()->full()]) }}"
-                                        class="btn btn-sm btn-warning btn-social btn-block hidden-print{{ ((!$asset->model) ? ' disabled' : '') }}">
-                                            <i class="fa fa-calendar-plus-o"></i>
-                                            Reserve
-                                        </a>
+                                        @if($basketHasItems && $inBasket)
+                                            {{-- Asset already in basket → go straight to basket reserve --}}
+                                            <a href="{{ route('hardware.basket.reserve.show') }}"
+                                               class="btn btn-sm btn-warning btn-social btn-block hidden-print{{ ((!$asset->model) ? ' disabled' : '') }}">
+                                                <i class="fa fa-calendar-plus-o"></i>
+                                                Reserve
+                                                <span class="label label-default" style="margin-left:4px; font-size:10px;">basket</span>
+                                            </a>
+                                        @elseif($basketHasItems && !$inBasket)
+                                            {{-- Basket has other items → add this asset and go to basket reserve --}}
+                                            <form method="POST" action="{{ route('hardware.basket.add', $asset->id) }}"
+                                                  style="margin:0;" {{ (!$asset->model) ? 'class=disabled' : '' }}>
+                                                @csrf
+                                                <input type="hidden" name="return_to" value="{{ route('hardware.basket.reserve.show') }}">
+                                                <button type="submit"
+                                                        class="btn btn-sm btn-warning btn-block{{ ((!$asset->model) ? ' disabled' : '') }}">
+                                                    <i class="fa fa-calendar-plus-o"></i>
+                                                    Reserve
+                                                    <span class="label label-default" style="margin-left:4px; font-size:10px;">+ basket</span>
+                                                </button>
+                                            </form>
+                                        @else
+                                            {{-- Empty basket → normal single-asset reserve --}}
+                                            <a href="{{ route('hardware.reserve.create', ['asset' => $asset->id, 'reserve' => 1, 'return_to' => url()->full()]) }}"
+                                               class="btn btn-sm btn-warning btn-social btn-block hidden-print{{ ((!$asset->model) ? ' disabled' : '') }}">
+                                                <i class="fa fa-calendar-plus-o"></i>
+                                                Reserve
+                                            </a>
+                                        @endif
+                                    </div>
+
+                                    {{-- Add to / Remove from Basket --}}
+                                    <div class="col-md-12 hidden-print" style="padding-top: 5px;">
+                                        @if($inBasket)
+                                            <form method="POST" action="{{ route('hardware.basket.remove', $asset->id) }}">
+                                                @csrf
+                                                @method('DELETE')
+                                                <button type="submit" class="btn btn-sm btn-default btn-block">
+                                                    <i class="fa fa-shopping-cart"></i> {{ trans('general.basket_remove') }}
+                                                </button>
+                                            </form>
+                                        @else
+                                            <form method="POST" action="{{ route('hardware.basket.add', $asset->id) }}">
+                                                @csrf
+                                                <button type="submit" class="btn btn-sm btn-default btn-block">
+                                                    <i class="fa fa-shopping-cart"></i> {{ trans('general.basket_add') }}
+                                                </button>
+                                            </form>
+                                        @endif
                                     </div>
                                 @endif
 
