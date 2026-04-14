@@ -566,42 +566,7 @@
                                             @endif
                                         </ul>
 
-                                        {{-- Reservation status display --}}
-                                        @php $activeReservations = $asset->activeReservations()->with('user')->get(); @endphp
-                                        @if ($activeReservations->count() > 0)
-                                            <div style="margin-top: 8px;">
-                                                <span class="label label-warning">RESERVED</span>
-                                                <ul class="list-unstyled" style="margin-top: 5px; padding-left: 0; font-size: 13px;">
-                                                    @foreach($activeReservations as $res)
-                                                        <li style="white-space: nowrap;">
-                                                            {{ optional($res->user)->username ?? optional($res->user)->email ?? 'User #'.$res->user_id }}:
-                                                            {{ Helper::getFormattedDateObject($res->reserved_from, 'datetime', false) }}
-                                                            –
-                                                            {{ Helper::getFormattedDateObject($res->reserved_until_ui, 'datetime', false) }}
-                                                        </li>
-                                                    @endforeach
-                                                </ul>
-                                            </div>
-                                        @endif
                                     </div>
-                                @endif
-                                @if (!$asset->assignedTo || $asset->deleted_at != '')
-                                    @php $activeReservations = $asset->activeReservations()->with('user')->get(); @endphp
-                                    @if ($activeReservations->count() > 0)
-                                        <div class="col-md-12" style="margin-bottom: 8px;">
-                                            <span class="label label-warning">RESERVED</span>
-                                            <ul class="list-unstyled" style="margin-top: 5px; padding-left: 0; font-size: 13px;">
-                                                @foreach($activeReservations as $res)
-                                                    <li style="white-space: nowrap;">
-                                                        {{ optional($res->user)->username ?? optional($res->user)->email ?? 'User #'.$res->user_id }}:
-                                                        {{ Helper::getFormattedDateObject($res->reserved_from, 'datetime', false) }}
-                                                        –
-                                                        {{ Helper::getFormattedDateObject($res->reserved_until_ui, 'datetime', false) }}
-                                                    </li>
-                                                @endforeach
-                                            </ul>
-                                        </div>
-                                    @endif
                                 @endif
                                 @if (($snipeSettings->qr_code=='1') || $snipeSettings->label2_2d_type!='none')
                                     <div class="col-md-12 text-center" style="padding-top: 15px;">
