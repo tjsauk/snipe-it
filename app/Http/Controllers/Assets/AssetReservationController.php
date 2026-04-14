@@ -6,7 +6,11 @@ use App\Events\CheckoutableCheckedIn;
 use App\Http\Controllers\Controller;
 use App\Models\Asset;
 use App\Models\AssetReservation;
+use App\Models\CheckoutAcceptance;
+use App\Models\LicenseSeat;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Contracts\View\View;
@@ -217,6 +221,7 @@ class AssetReservationController extends Controller
         if ($timesChanged && !$newStart->isFuture() && !$assetCheckedOutToReservationUser) {
             $reservation->status = 'cancelled';
             $reservation->save();
+            $asset->logReservationEvent($reservation, 'reservation_cancelled', 'Reservation converted to checkout via edit');
             $asset->checkOut($reservation->user, $user, $newStart->format('Y-m-d H:i:s'), $newEnd->format('Y-m-d H:i:s'), 'Converted from reservation edit', $asset->name);
             return redirect($returnTo)->with('success', 'Reservation converted to checkout.');
         }
@@ -228,6 +233,7 @@ class AssetReservationController extends Controller
                 $reservation->save();
                 $asset->expected_checkin = $newEnd->format('Y-m-d H:i:s');
                 $asset->save();
+                $asset->logReservationEvent($reservation, 'reservation_updated', 'Reservation extended (checkout end updated)');
 
                 return redirect($returnTo)->with('success', 'Reservation extended successfully.');
             }
@@ -260,6 +266,7 @@ class AssetReservationController extends Controller
 
                     $reservation->status = 'cancelled';
                     $reservation->save();
+                    $asset->logReservationEvent($reservation, 'reservation_cancelled', 'Reservation merged into active checkout');
 
                     // Chain-merge any reservations now adjacent to the extended checkout
                     $asset->absorbAdjacentReservations($reservation->user_id, $mergedEnd, $tz);
@@ -271,8 +278,8 @@ class AssetReservationController extends Controller
             // For active (future) reservations, always cancel and recreate.
             // We do NOT touch an ongoing checkout here — that case is handled above.
             $reservation->status = 'cancelled';
-
             $reservation->save();
+            $asset->logReservationEvent($reservation, 'reservation_cancelled', 'Reservation updated (old period cancelled, new period created)');
 
             // Create a new reservation with updated times, merging into adjacent/overlapping own reservation if present.
             // Only merge with future reservations (reserved_until > now) to avoid pulling in stale ones.
@@ -369,6 +376,8 @@ class AssetReservationController extends Controller
             $successMsg .= ' ' . $additionalCreated . ' additional period' . ($additionalCreated > 1 ? 's' : '') . ' created.';
         }
 
+        $asset->logReservationEvent($reservation, 'reservation_updated', 'Reservation updated');
+
         return redirect($returnTo)->with('success', $successMsg);
     }
 
@@ -391,6 +400,7 @@ class AssetReservationController extends Controller
         if ($isSuper) {
             $reservation->status = 'cancelled';
             $reservation->save();
+            $asset->logReservationEvent($reservation, 'reservation_cancelled', 'Reservation cancelled by admin');
 
             return redirect($returnTo)->with('success', 'Reservation cancelled.');
         }
@@ -402,8 +412,112 @@ class AssetReservationController extends Controller
 
         $reservation->status = 'cancelled';
         $reservation->save();
+        $asset->logReservationEvent($reservation, 'reservation_cancelled', 'Reservation cancelled by user');
 
         return redirect($returnTo)->with('success', 'Reservation cancelled.');
+    }
+
+    /**
+     * Bulk cancel reservations (and checkin fulfilled ones).
+     * Called via AJAX from the manage reservations page.
+     * Returns JSON – never redirects.
+     *
+     * POST body: { reservation_ids: [1, 2, 3], asset_id: 5 }
+     */
+    public function bulkCancel(Request $request, Asset $asset): JsonResponse
+    {
+        $user   = auth()->user();
+        if (!$user) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+        $isSuper = method_exists($user, 'isSuperUser') && $user->isSuperUser();
+
+        $ids = $request->input('reservation_ids', []);
+        if (empty($ids) || !is_array($ids)) {
+            return response()->json(['error' => 'No reservation IDs provided'], 422);
+        }
+
+        $cancelled = 0;
+        $checkedIn = 0;
+        $errors    = [];
+
+        foreach ($ids as $reservationId) {
+            $reservation = AssetReservation::where('id', $reservationId)
+                ->where('asset_id', $asset->id)
+                ->first();
+
+            if (!$reservation) {
+                $errors[] = "Reservation #{$reservationId} not found for this asset.";
+                continue;
+            }
+
+            // Non-super users may only cancel their own reservations
+            if (!$isSuper && $reservation->user_id !== $user->id) {
+                $errors[] = "Reservation #{$reservationId}: not authorized.";
+                continue;
+            }
+
+            if ($reservation->status === 'fulfilled') {
+                // Fulfilled = asset is currently checked out through this reservation.
+                // Do a proper checkin instead of just canceling.
+                if ($asset->assignedTo && $asset->assigned_to == $reservation->user_id) {
+                    $target         = $asset->assignedTo;
+                    $originalValues = $asset->getRawOriginal();
+                    $checkin_at     = now()->format('Y-m-d H:i:s');
+
+                    $asset->expected_checkin = null;
+                    $asset->last_checkin     = $checkin_at;
+                    $asset->accepted         = null;
+                    $asset->assignedTo()->disassociate($asset);
+                    $asset->location_id = $asset->rtd_location_id;
+
+                    // Clear pending license seat assignments
+                    $asset->licenseseats->each(fn(LicenseSeat $seat) => $seat->update(['assigned_to' => null]));
+
+                    // Delete pending acceptances
+                    CheckoutAcceptance::pending()
+                        ->whereHasMorph('checkoutable', [Asset::class], fn(Builder $q) => $q->where('id', $asset->id))
+                        ->get()
+                        ->each(fn($a) => $a->delete());
+
+                    if ($asset->save()) {
+                        event(new CheckoutableCheckedIn(
+                            $asset,
+                            $target,
+                            $user,
+                            'Checked in via bulk reservation cancel',
+                            $checkin_at,
+                            $originalValues
+                        ));
+                        $reservation->status = 'cancelled';
+                        $reservation->save();
+                        $asset->logReservationEvent($reservation, 'reservation_cancelled', 'Reservation cancelled (asset checked in)');
+                        $asset->refresh();
+                        $checkedIn++;
+                    } else {
+                        $errors[] = "Checkin failed for reservation #{$reservationId}.";
+                    }
+                } else {
+                    // Fulfilled but asset is no longer checked out to that user – just cancel
+                    $reservation->status = 'cancelled';
+                    $reservation->save();
+                    $asset->logReservationEvent($reservation, 'reservation_cancelled', 'Reservation cancelled (bulk)');
+                    $cancelled++;
+                }
+            } else {
+                // active / overdue reservation – just cancel
+                $reservation->status = 'cancelled';
+                $reservation->save();
+                $asset->logReservationEvent($reservation, 'reservation_cancelled', 'Reservation cancelled (bulk)');
+                $cancelled++;
+            }
+        }
+
+        return response()->json([
+            'cancelled'  => $cancelled,
+            'checked_in' => $checkedIn,
+            'errors'     => $errors,
+        ]);
     }
 
     /**

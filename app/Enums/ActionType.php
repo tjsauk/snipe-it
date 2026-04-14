@@ -14,6 +14,10 @@ enum ActionType: string
     case CheckinFrom = 'checkin from';
     case Reserved = 'reserved';
     case ReservationCanceled = 'reservation canceled';
+    case ReservationCheckout = 'reservation_checkout';
+    case ReservationExpired = 'reservation_expired';
+    case ReservationCancelled = 'reservation_cancelled';
+    case ReservationUpdated = 'reservation_updated';
     case Requested = 'requested';
     case RequestCanceled = 'request canceled';
     case Accepted = 'accepted';

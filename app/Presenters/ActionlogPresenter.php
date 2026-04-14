@@ -121,6 +121,18 @@ class ActionlogPresenter extends Presenter
             $period = $parts[0] ?? '';
             return $period ? 'Reserved ' . $period : 'reserved';
         }
+        if ($this->action_type === 'reservation_checkout') {
+            return 'Reservation → Checkout';
+        }
+        if ($this->action_type === 'reservation_expired') {
+            return 'Reservation expired';
+        }
+        if ($this->action_type === 'reservation_cancelled') {
+            return 'Reservation cancelled';
+        }
+        if ($this->action_type === 'reservation_updated') {
+            return 'Reservation updated';
+        }
         return mb_strtolower(trans('general.'.str_replace(' ', '_', $this->action_type)));
     }
 

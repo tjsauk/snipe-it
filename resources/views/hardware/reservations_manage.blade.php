@@ -42,6 +42,9 @@
                             <button type="button" id="manageClearCancelBtn" class="btn btn-sm btn-default" style="margin-left:4px;">
                                 Clear selection
                             </button>
+                            <small id="manageBulkCheckinNote" class="text-muted" style="display:none; margin-left:8px;">
+                                <i class="fa fa-info-circle"></i> Checked-out reservations will be checked in.
+                            </small>
                         </div>
 
                         <div class="table-responsive">
@@ -62,12 +65,10 @@
                             @foreach ($reservations as $reservation)
                                 <tr>
                                     <td class="hidden-print">
-                                        @if ($reservation->status !== 'fulfilled')
-                                            <input type="checkbox"
-                                                   class="manage-cancel-cb"
-                                                   data-asset-id="{{ $asset->id }}"
-                                                   data-reservation-id="{{ $reservation->id }}">
-                                        @endif
+                                        <input type="checkbox"
+                                               class="manage-cancel-cb"
+                                               data-reservation-id="{{ $reservation->id }}"
+                                               data-type="{{ $reservation->status === 'fulfilled' ? 'fulfilled' : 'active' }}">
                                     </td>
                                     <td>Reservation</td>
                                     <td>
@@ -160,17 +161,30 @@
 @section('moar_scripts')
 <script>
 (function () {
-    var csrfToken  = (document.querySelector('meta[name="csrf-token"]') || {}).getAttribute('content') || '';
-    var selectAll  = document.getElementById('manageSelectAll');
-    var cancelBar  = document.getElementById('manageBulkCancelBar');
-    var countEl    = document.getElementById('manageCancelCount');
-    var cancelBtn  = document.getElementById('manageBulkCancelBtn');
-    var clearBtn   = document.getElementById('manageClearCancelBtn');
+    var csrfToken   = (document.querySelector('meta[name="csrf-token"]') || {}).getAttribute('content') || '';
+    var assetId     = {{ $asset->id }};
+    var bulkUrl     = '/hardware/' + assetId + '/reservations/bulk-cancel';
+
+    var selectAll   = document.getElementById('manageSelectAll');
+    var cancelBar   = document.getElementById('manageBulkCancelBar');
+    var countEl     = document.getElementById('manageCancelCount');
+    var cancelBtn   = document.getElementById('manageBulkCancelBtn');
+    var clearBtn    = document.getElementById('manageClearCancelBtn');
+    var checkinNote = document.getElementById('manageBulkCheckinNote');
 
     function updateBar() {
-        var n = document.querySelectorAll('.manage-cancel-cb:checked').length;
+        var checked = document.querySelectorAll('.manage-cancel-cb:checked');
+        var n = checked.length;
         if (countEl)   countEl.textContent = n;
         if (cancelBar) cancelBar.style.display = n > 0 ? '' : 'none';
+
+        // Show the "will be checked in" note if any fulfilled reservations are selected
+        if (checkinNote) {
+            var hasFulfilled = Array.from(checked).some(function (cb) {
+                return cb.getAttribute('data-type') === 'fulfilled';
+            });
+            checkinNote.style.display = hasFulfilled ? '' : 'none';
+        }
     }
 
     function syncSelectAll() {
@@ -209,16 +223,43 @@
         cancelBtn.addEventListener('click', function () {
             var checked = Array.from(document.querySelectorAll('.manage-cancel-cb:checked'));
             if (checked.length === 0) return;
-            if (!confirm('Cancel ' + checked.length + ' reservation(s)?')) return;
 
-            Promise.all(checked.map(function (cb) {
-                return fetch('/hardware/' + cb.getAttribute('data-asset-id') + '/reservations/' + cb.getAttribute('data-reservation-id'), {
-                    method: 'DELETE',
-                    headers: { 'X-CSRF-TOKEN': csrfToken, 'X-Requested-With': 'XMLHttpRequest' },
-                });
-            })).then(function () {
+            var hasFulfilled = checked.some(function (cb) {
+                return cb.getAttribute('data-type') === 'fulfilled';
+            });
+
+            var msg = 'Cancel ' + checked.length + ' reservation(s)?';
+            if (hasFulfilled) {
+                msg += '\n\nChecked-out reservations will also be checked in.';
+            }
+            if (!confirm(msg)) return;
+
+            var reservationIds = checked.map(function (cb) {
+                return parseInt(cb.getAttribute('data-reservation-id'), 10);
+            });
+
+            cancelBtn.disabled = true;
+            cancelBtn.textContent = 'Cancelling…';
+
+            fetch(bulkUrl, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                },
+                body: JSON.stringify({ reservation_ids: reservationIds }),
+            })
+            .then(function (response) { return response.json(); })
+            .then(function (data) {
+                if (data.errors && data.errors.length) {
+                    alert('Some errors occurred:\n' + data.errors.join('\n'));
+                }
                 window.location.reload();
-            }).catch(function () {
+            })
+            .catch(function (err) {
+                console.error('Bulk cancel failed', err);
                 window.location.reload();
             });
         });

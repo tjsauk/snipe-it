@@ -140,6 +140,10 @@ Route::group(
         Route::post('{assetId}/reserve', [AssetCheckoutController::class, 'store'])
             ->name('hardware.reserve.store');
 
+            // Bulk cancel reservations (AJAX, returns JSON)
+        Route::post('{asset}/reservations/bulk-cancel', [AssetReservationController::class, 'bulkCancel'])
+            ->name('hardware.reserve.bulk-cancel');
+
             // Cancel reservation
         Route::delete('{asset}/reservations/{reservation}', [AssetReservationController::class, 'destroy'])
             ->name('hardware.reserve.destroy');

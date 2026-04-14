@@ -802,19 +802,25 @@ class Asset extends Depreciable
      */
    public function autoCheckoutActiveReservationIfDue(): void
     {
-        // hour precision "now"
         $now = Carbon::now()->minute(0)->second(0);
 
-        // If the asset is already checked out, do nothing
+        // --- Step 1: expire past reservations whose window has completely passed ---
+        // These were never converted to checkouts (page was never visited during the window).
+        $this->expireOverdueReservations($now);
+
+        // If the asset is already checked out, no further auto-checkout is possible.
         if ($this->assigned_to) {
             return;
         }
+
+        // --- Step 2: find an active reservation whose window is currently open ---
+        // "Open" means: started at or before now AND (no end, OR end is at or after now).
         $reservation = $this->reservations()
             ->where('status', 'active')
             ->where('reserved_from', '<=', $now)
             ->where(function ($q) use ($now) {
                 $q->whereNull('reserved_until')
-                ->orWhere('reserved_until', '>=', $now);
+                  ->orWhere('reserved_until', '>=', $now);
             })
             ->orderBy('reserved_from')
             ->first();
@@ -823,21 +829,12 @@ class Asset extends Depreciable
             return;
         }
 
-        // If the asset is already checked out to someone else, do nothing
-        if ($this->assigned_to && !($this->assigned_to == $reservation->user_id && $this->assigned_type == 'App\Models\User')) {
-            return;
-        }
-
-        // Target user is the reservation owner
         $targetUser = $reservation->user;
         if (!$targetUser) {
             return;
         }
 
-        // Always use the System user as the actor for automatic transitions.
         $admin = $this->resolveSystemActor();
-
-        // If we cannot find the System user, bail safely.
         if (!$admin) {
             \Log::warning('autoCheckoutActiveReservationIfDue: System user not found', [
                 'asset_id' => $this->id,
@@ -846,36 +843,80 @@ class Asset extends Depreciable
             return;
         }
 
-        if ($this->assigned_to) {
-            // Extend the checkout
-            $this->expected_checkin = $reservation->reserved_until;
-            $this->save();
+        // Checkout start = when the reservation actually began (not "now"),
+        // so the history shows the correct start time.
+        $checkoutAt = Carbon::parse($reservation->reserved_from)->format('Y-m-d H:i:s');
+        $expected   = $reservation->reserved_until
+            ? Carbon::parse($reservation->reserved_until)->format('Y-m-d H:i:s')
+            : null;
+
+        $success = $this->checkOut(
+            $targetUser,
+            $admin,
+            $checkoutAt,
+            $expected,
+            'Auto checkout from reservation (reservation → checkout)',
+            $this->name
+        );
+
+        if ($success) {
             $reservation->status = 'fulfilled';
             $reservation->save();
-        } else {
-            // Use TODAY as checkout start when converting (reservation is "due now")
-            $checkoutAt = $now->format('Y-m-d H:i:s');
 
-            // Expected checkin is reservation end (if any); if null, you can pick a default
-            $expected = $reservation->reserved_until
-                ? Carbon::parse($reservation->reserved_until)->format('Y-m-d H:i:s')
-                : null;
-
-            $success = $this->checkOut(
-                $targetUser,
-                $admin,
-                $checkoutAt,
-                $expected,
-                'Auto checkout from reservation window',
-                $this->name
+            // Add a dedicated reservation-event entry to history.
+            $this->logReservationEvent(
+                $reservation,
+                'reservation_checkout',
+                'Reservation automatically converted to checkout'
             );
-
-            if ($success) {
-                // Mark fulfilled; keep the record so it stays visible until reserved_until passes
-                $reservation->status = 'fulfilled';
-                $reservation->save();
-            }
         }
+    }
+
+    /**
+     * Mark every active reservation for this asset whose window has completely
+     * passed (reserved_until < $now) as 'expired', and write a history entry
+     * for each one so admins can see what was missed.
+     */
+    protected function expireOverdueReservations(Carbon $now): void
+    {
+        $overdue = $this->reservations()
+            ->where('status', 'active')
+            ->where('reserved_from', '<', $now)
+            ->whereNotNull('reserved_until')
+            ->where('reserved_until', '<', $now)
+            ->get();
+
+        foreach ($overdue as $res) {
+            $res->status = 'expired';
+            $res->save();
+
+            $this->logReservationEvent(
+                $res,
+                'reservation_expired',
+                'Reservation expired without checkout'
+            );
+        }
+    }
+
+    /**
+     * Write a single Actionlog row that captures a reservation lifecycle event
+     * (expired, auto-checked-out, etc.) so it appears in the asset's history tab.
+     */
+    public function logReservationEvent(
+        \App\Models\AssetReservation $reservation,
+        string $actionType,
+        string $note
+    ): void {
+        $log = new \App\Models\Actionlog();
+        $log->item_type    = static::class;
+        $log->item_id      = $this->id;
+        $log->target_type  = \App\Models\User::class;
+        $log->target_id    = $reservation->user_id;
+        $log->action_type  = $actionType;
+        $log->note         = $note;
+        $log->created_by   = auth()->id();
+        $log->action_date  = now()->format('Y-m-d H:i:s');
+        $log->save();
     }
 
 

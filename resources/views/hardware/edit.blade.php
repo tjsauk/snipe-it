@@ -143,6 +143,29 @@
 
 
 
+    {{-- Autofill image preview (shown only when autofill is used) --}}
+    <div id="autofill-image-section" class="form-group" style="display:none;">
+        <label class="col-md-3 control-label">{{ trans('general.image_upload') }}</label>
+        <div class="col-md-8">
+            <label class="form-control" style="cursor:pointer;">
+                <input type="checkbox" id="use_autofill_image" name="use_autofill_image" value="1">
+                Copy image from selected asset
+            </label>
+            <div id="autofill-image-preview-wrap" style="margin-top:6px;">
+                <img id="autofill-image-preview" src="" alt="autofill preview" style="max-width:200px; display:none;" class="img-thumbnail">
+            </div>
+            <input type="hidden" id="autofill_image_from_id" name="autofill_image_from_id" value="">
+        </div>
+    </div>
+
+    {{-- Autofill files list (shown only when autofill is used) --}}
+    <div id="autofill-files-section" class="form-group" style="display:none;">
+        <label class="col-md-3 control-label">Files</label>
+        <div class="col-md-8" id="autofill-files-list">
+            {{-- Populated by JS --}}
+        </div>
+    </div>
+
     @include ('partials.forms.edit.image-upload', ['image_path' => app('assets_upload_path')])
 
 
@@ -562,15 +585,54 @@ function setSelect2Value(selectId, value, text) {
             setSelect2Value('supplier_select', data.supplier_id, data.supplier_name);
             setSelect2Value('rtd_location_id_location_select', data.rtd_location_id, data.location_name);
             setSelect2Value('company_select', data.company_id, data.company_name);
-
-            // Status: if your status select doesn't have id="status_select_id",
-            // replace this line with the correct id OR use the class fallback below.
             setSelect2Value('status_select_id', data.status_id);
 
-            // Class fallback if Snipe-IT uses class="status_id" instead of id:
-            // if (data.status_id !== undefined && data.status_id !== null) {
-            //     $('.status_id').val(String(data.status_id)).trigger('change');
-            // }
+            // --- Autofill image ---
+            var imgSection = document.getElementById('autofill-image-section');
+            var imgFromId  = document.getElementById('autofill_image_from_id');
+            var imgPreview = document.getElementById('autofill-image-preview');
+            var imgCheckbox = document.getElementById('use_autofill_image');
+
+            if (data.image && data.image_url) {
+                imgFromId.value = data.id;
+                imgPreview.src  = data.image_url;
+                imgPreview.style.display = 'block';
+                imgCheckbox.checked = true;
+                imgSection.style.display = 'block';
+            } else {
+                imgSection.style.display = 'none';
+                imgFromId.value = '';
+                imgCheckbox.checked = false;
+            }
+
+            // --- Autofill files ---
+            var filesSection = document.getElementById('autofill-files-section');
+            var filesList    = document.getElementById('autofill-files-list');
+            filesList.innerHTML = '';
+
+            if (data.uploads && data.uploads.length > 0) {
+                data.uploads.forEach(function (file) {
+                    var label = document.createElement('label');
+                    label.className = 'form-control';
+                    label.style.height = 'auto';
+                    label.style.marginBottom = '4px';
+                    label.style.cursor = 'pointer';
+
+                    var cb = document.createElement('input');
+                    cb.type    = 'checkbox';
+                    cb.name    = 'autofill_file_ids[]';
+                    cb.value   = file.id;
+                    cb.checked = true;
+                    cb.style.marginRight = '6px';
+
+                    label.appendChild(cb);
+                    label.appendChild(document.createTextNode(file.filename + (file.note ? ' – ' + file.note : '')));
+                    filesList.appendChild(label);
+                });
+                filesSection.style.display = 'block';
+            } else {
+                filesSection.style.display = 'none';
+            }
 
             clearSuggestions();
             input.focus();

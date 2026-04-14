@@ -219,7 +219,13 @@ class AssetsController extends Controller
                         Storage::disk('public')->copy('assets/' . $cloned_model_img->image, $new_image);
                         $asset->image = $new_image_name;
                     }
-
+                } elseif ($request->filled('autofill_image_from_id') && $request->has('use_autofill_image')) {
+                    $sourceAsset = Asset::select('image')->find($request->input('autofill_image_from_id'));
+                    if ($sourceAsset && $sourceAsset->image && Storage::disk('public')->exists('assets/' . $sourceAsset->image)) {
+                        $new_image_name = 'autofill-' . date('U') . '-' . $sourceAsset->image;
+                        Storage::disk('public')->copy('assets/' . $sourceAsset->image, 'assets/' . $new_image_name);
+                        $asset->image = $new_image_name;
+                    }
                 } else {
                     $asset = $request->handleImages($asset);
                 }
@@ -253,6 +259,19 @@ class AssetsController extends Controller
                 // to inject the Custom Field Rules into the $rules property right before invoking the _real_ save.
                 // so, instead, we have to catch failures on the 'else' clause and throw there.
                 if ($asset->isValid() && $asset->save()) {
+                    // Copy autofill files to the new asset
+                    $autofillFileIds = $request->input('autofill_file_ids', []);
+                    if (!empty($autofillFileIds)) {
+                        $sourceLogs = Actionlog::whereIn('id', $autofillFileIds)
+                            ->where('item_type', Asset::class)
+                            ->where('action_type', 'uploaded')
+                            ->whereNotNull('filename')
+                            ->get();
+                        foreach ($sourceLogs as $sourceLog) {
+                            $asset->logUpload($sourceLog->filename, $sourceLog->note);
+                        }
+                    }
+
                     $target = null;
                     $location = null;
 
@@ -515,6 +534,32 @@ public function templateAssetDetail(Asset $asset)
         $locationName = Location::where('id', $rtdLocationId)->value('name');
     }
 
+    // Image
+    $imageUrl = null;
+    if ($asset->image) {
+        $imageUrl = Storage::disk('public')->url('assets/' . $asset->image);
+    }
+
+    // Uploaded files from action_logs
+    $uploads = Actionlog::where('item_type', Asset::class)
+        ->where('item_id', $asset->id)
+        ->where('action_type', 'uploaded')
+        ->whereNotNull('filename')
+        ->whereNotIn('filename', function ($q) use ($asset) {
+            $q->select('filename')
+                ->from('action_logs')
+                ->where('item_type', Asset::class)
+                ->where('action_type', 'upload deleted')
+                ->where('item_id', $asset->id);
+        })
+        ->get(['id', 'filename', 'note'])
+        ->map(fn($log) => [
+            'id'       => $log->id,
+            'filename' => $log->filename,
+            'note'     => $log->note,
+        ])
+        ->values();
+
     return response()->json([
         'id'               => $asset->id,
         'name'             => $asset->name,
@@ -525,12 +570,17 @@ public function templateAssetDetail(Asset $asset)
         'supplier_id'      => $asset->supplier_id,
         'supplier_name'    => $supplierName,
 
-        'status_id'        => $asset->status_id, // you said status already works, so keep ID only
+        'status_id'        => $asset->status_id,
 
         'rtd_location_id'  => $rtdLocationId,
         'location_name'    => $locationName,
 
         'company_id'       => $asset->company_id,
+
+        'image'            => $asset->image,
+        'image_url'        => $imageUrl,
+
+        'uploads'          => $uploads,
     ]);
 }
 
