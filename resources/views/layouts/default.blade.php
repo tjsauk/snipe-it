@@ -1932,6 +1932,25 @@
         @can('index', \App\Models\Asset::class)
         <script src="https://unpkg.com/html5-qrcode" nonce="{{ csrf_token() }}"></script>
         <script src="{{ asset('js/snipeit-nav-qr-scanner.js') }}" nonce="{{ csrf_token() }}"></script>
+        <script nonce="{{ csrf_token() }}">
+            // Wire navbar button (outside scanner container) to open the modal
+            (function () {
+                function wireQrBtn() {
+                    var btn = document.getElementById('nav-qr-scan-btn');
+                    if (btn && window.__snipeItNavQrScanner) {
+                        btn.addEventListener('click', function (e) {
+                            e.preventDefault();
+                            window.__snipeItNavQrScanner.open();
+                        });
+                    }
+                }
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', wireQrBtn);
+                } else {
+                    wireQrBtn();
+                }
+            })();
+        </script>
         @endcan
 
         @section('moar_scripts')

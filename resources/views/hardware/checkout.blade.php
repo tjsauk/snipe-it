@@ -45,6 +45,31 @@
 @stop
 
 {{-- Page content --}}
+@push('css')
+<style>
+    /* Mobile: make tabs scroll horizontally instead of wrapping into calendar */
+    @media (max-width: 767px) {
+        #assetCheckoutForm .nav-tabs-custom > .nav-tabs {
+            display: flex;
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            border-bottom: 1px solid #ddd;
+        }
+        #assetCheckoutForm .nav-tabs-custom > .nav-tabs > li {
+            flex-shrink: 0;
+        }
+        #assetCheckoutForm .nav-tabs-custom > .nav-tabs > li > a {
+            white-space: nowrap;
+        }
+        /* Ensure calendar tab content has enough room */
+        #reserve-calendar {
+            padding-top: 10px;
+        }
+    }
+</style>
+@endpush
+
 @section('content')
 
     <style>
