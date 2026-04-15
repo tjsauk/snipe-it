@@ -219,11 +219,33 @@ class AssetReservationController extends Controller
         // Convert to checkout only when asset is NOT already checked out to this user.
         // When it IS checked out, the merge-with-checkout logic below handles the case.
         if ($timesChanged && !$newStart->isFuture() && !$assetCheckedOutToReservationUser) {
-            $reservation->status = 'cancelled';
+            // Overdue active reservation extended to future: update the reservation's end date,
+            // create the checkout, and mark the reservation as fulfilled — mirroring the
+            // auto-checkout flow so the manage page shows "Checked Out" on the reservation row.
+            $originalUntil = $reservation->reserved_until ? $reservation->reserved_until->format('Y-m-d H:i:s') : null;
+            $reservation->reserved_until = $newEnd->format('Y-m-d H:i:s');
             $reservation->save();
-            $asset->logReservationEvent($reservation, 'reservation_cancelled', 'Reservation converted to checkout via edit');
-            $asset->checkOut($reservation->user, $user, $newStart->format('Y-m-d H:i:s'), $newEnd->format('Y-m-d H:i:s'), 'Converted from reservation edit', $asset->name);
-            return redirect($returnTo)->with('success', 'Reservation converted to checkout.');
+
+            $success = $asset->checkOut(
+                $reservation->user,
+                $user,
+                $newStart->format('Y-m-d H:i:s'),
+                $newEnd->format('Y-m-d H:i:s'),
+                'Converted from overdue reservation via edit',
+                $asset->name
+            );
+
+            if ($success) {
+                $reservation->status = 'fulfilled';
+                $reservation->save();
+                $asset->logReservationEvent($reservation, 'reservation_checkout', 'Overdue reservation converted to checkout via edit');
+                return redirect($returnTo)->with('success', 'Reservation converted to checkout.');
+            }
+
+            // Checkout failed — revert the end date change and report the error.
+            $reservation->reserved_until = $originalUntil;
+            $reservation->save();
+            return redirect($returnTo)->with('error', 'Failed to create checkout. Please try again.');
         }
 
         if ($timesChanged) {
@@ -273,6 +295,19 @@ class AssetReservationController extends Controller
 
                     return redirect($returnTo)->with('success', 'Reservation merged with active checkout.');
                 }
+            }
+
+            // Edge case: asset is checked out to this user but the new period starts after the
+            // checkout's expected_checkin (merge condition failed). If the new start is in the
+            // past the intent is to extend the checkout, not create a new reservation.
+            if ($assetCheckedOutToReservationUser && !$newStart->isFuture()) {
+                $reservation->reserved_until = $newEnd->format('Y-m-d H:i:s');
+                $asset->expected_checkin = $newEnd->format('Y-m-d H:i:s');
+                $asset->save();
+                $reservation->status = 'fulfilled';
+                $reservation->save();
+                $asset->logReservationEvent($reservation, 'reservation_checkout', 'Overdue reservation converted to checkout via edit (checkout extended)');
+                return redirect($returnTo)->with('success', 'Reservation converted to checkout.');
             }
 
             // For active (future) reservations, always cancel and recreate.

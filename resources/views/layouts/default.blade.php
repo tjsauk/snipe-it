@@ -39,6 +39,11 @@
     {{-- page level css --}}
     @stack('css')
 
+    {{-- QR-skanneri --}}
+    @can('index', \App\Models\Asset::class)
+    <link rel="stylesheet" href="{{ asset('css/snipeit-nav-qr-scanner.css') }}">
+    @endcan
+
 
     <style>
 
@@ -852,14 +857,6 @@
                     <!-- Navbar Right Menu -->
                     <div class="navbar-custom-menu">
                         <ul class="nav navbar-nav">
-                            @can('index', \App\Models\Asset::class)
-                                <li aria-hidden="true"{!! (request()->is('hardware*') ? ' class="active"' : '') !!}>
-                                    <a href="{{ url('hardware') }}" {{$snipeSettings->shortcuts_enabled == 1 ? "accesskey=1" : ''}} tabindex="-1" data-tooltip="true" data-placement="bottom" data-title="{{ trans('general.assets') }}">
-                                        <x-icon type="assets" class="fa-fw" />
-                                        <span class="sr-only">{{ trans('general.assets') }}</span>
-                                    </a>
-                                </li>
-                            @endcan
                             @can('view', \App\Models\License::class)
                                 <li aria-hidden="true"{!! (request()->is('licenses*') ? ' class="active"' : '') !!}>
                                     <a href="{{ route('licenses.index') }}" {{$snipeSettings->shortcuts_enabled == 1 ? "accesskey=2" : ''}} tabindex="-1" data-tooltip="true" data-placement="bottom" data-title="{{ trans('general.licenses') }}">
@@ -913,6 +910,24 @@
                                             </div>
                                         </div>
                                     </form>
+                                </li>
+                            @endcan
+
+                            {{-- QR-skanneri painike navbarissa --}}
+                            @can('index', \App\Models\Asset::class)
+                                <li aria-hidden="true" id="nav-qr-scanner-item">
+                                    <a href="javascript:void(0)"
+                                       data-nav-qr-open
+                                       tabindex="-1"
+                                       data-tooltip="true"
+                                       data-placement="bottom"
+                                       data-title="Scan QR Code">
+                                        <span style="display:inline-flex; align-items:center; gap:3px; vertical-align:middle;">
+                                            <i class="fa fa-search" style="font-size:0.9em;"></i>
+                                            <i class="fa fa-camera" style="font-size:1.1em;"></i>
+                                        </span>
+                                        <span class="sr-only">Scan QR Code</span>
+                                    </a>
                                 </li>
                             @endcan
 
@@ -1211,6 +1226,12 @@
                             @endcan
                         </ul>
                     </div>
+
+                    {{-- QR-skanneri modal --}}
+                    @can('index', \App\Models\Asset::class)
+                        @include('partials.nav-qr-scanner')
+                    @endcan
+
                 </nav>
                 <a href="#" style="float:left" class="sidebar-toggle-mobile visible-xs btn" data-toggle="push-menu"
                    role="button">
@@ -1906,6 +1927,12 @@
 
         {{-- Page level javascript --}}
         @stack('js')
+
+        {{-- QR-skanneri JS --}}
+        @can('index', \App\Models\Asset::class)
+        <script src="https://unpkg.com/html5-qrcode" nonce="{{ csrf_token() }}"></script>
+        <script src="{{ asset('js/snipeit-nav-qr-scanner.js') }}" nonce="{{ csrf_token() }}"></script>
+        @endcan
 
         @section('moar_scripts')
         @show

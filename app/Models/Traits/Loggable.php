@@ -40,7 +40,7 @@ trait Loggable
      * @since  [v3.4]
      * @return \App\Models\Actionlog
      */
-    public function logCheckout($note, $target, $action_date = null, $originalValues = [])
+    public function logCheckout($note, $target, $action_date = null, $originalValues = [], $actor = null)
     {
 
         $log = new Actionlog;
@@ -48,7 +48,9 @@ trait Loggable
         $fields_array = [];
 
         $log = $this->determineLogItemType($log);
-        if (auth()->user()) {
+        if ($actor) {
+            $log->created_by = $actor->id;
+        } elseif (auth()->user()) {
             $log->created_by = auth()->id();
         }
 
@@ -145,7 +147,7 @@ trait Loggable
      * @since  [v3.4]
      * @return \App\Models\Actionlog
      */
-    public function logCheckin($target, $note, $action_date = null, $originalValues = [])
+    public function logCheckin($target, $note, $action_date = null, $originalValues = [], $actor = null)
     {
         $log = new Actionlog;
 
@@ -189,7 +191,9 @@ trait Loggable
             $log->action_date = date('Y-m-d H:i:s');
         }
 
-        if (auth()->user()) {
+        if ($actor) {
+            $log->created_by = $actor->id;
+        } elseif (auth()->user()) {
             $log->created_by = auth()->id();
         }
 

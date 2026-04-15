@@ -867,7 +867,8 @@ class Asset extends Depreciable
             $this->logReservationEvent(
                 $reservation,
                 'reservation_checkout',
-                'Reservation automatically converted to checkout'
+                'Reservation automatically converted to checkout',
+                $admin
             );
         }
     }
@@ -886,6 +887,7 @@ class Asset extends Depreciable
             ->where('reserved_until', '<', $now)
             ->get();
 
+        $systemActor = $this->resolveSystemActor();
         foreach ($overdue as $res) {
             $res->status = 'expired';
             $res->save();
@@ -893,7 +895,8 @@ class Asset extends Depreciable
             $this->logReservationEvent(
                 $res,
                 'reservation_expired',
-                'Reservation expired without checkout'
+                'Reservation expired without checkout',
+                $systemActor
             );
         }
     }
@@ -905,7 +908,8 @@ class Asset extends Depreciable
     public function logReservationEvent(
         \App\Models\AssetReservation $reservation,
         string $actionType,
-        string $note
+        string $note,
+        ?\App\Models\User $actor = null
     ): void {
         $log = new \App\Models\Actionlog();
         $log->item_type    = static::class;
@@ -914,7 +918,11 @@ class Asset extends Depreciable
         $log->target_id    = $reservation->user_id;
         $log->action_type  = $actionType;
         $log->note         = $note;
-        $log->created_by   = auth()->id();
+        if ($actor) {
+            $log->created_by = $actor->id;
+        } elseif (auth()->user()) {
+            $log->created_by = auth()->id();
+        }
         $log->action_date  = now()->format('Y-m-d H:i:s');
         $log->save();
     }
