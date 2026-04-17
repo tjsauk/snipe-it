@@ -122,7 +122,7 @@ class BasketController extends Controller
                     continue;
                 }
                 $checkoutAt = Carbon::now($tz)->format('Y-m-d H:i:s');
-                if ($asset->checkOut($target, $admin, $checkoutAt, null)) {
+                if ($asset->checkOut($target, $admin, $checkoutAt, null, null, $asset->name)) {
                     $successCount++;
                     $reservedIds[] = $assetId;
                 }
@@ -221,7 +221,7 @@ class BasketController extends Controller
                         }
                         $checkoutAt      = Carbon::now($tz)->format('Y-m-d H:i:s');
                         $expectedCheckin = $endBound->copy()->subMinute()->format('Y-m-d H:i:s');
-                        if ($asset->checkOut($target, $admin, $checkoutAt, $expectedCheckin)) {
+                        if ($asset->checkOut($target, $admin, $checkoutAt, $expectedCheckin, null, $asset->name)) {
                             $assetReserved = true;
                         } else {
                             $errors[] = "Asset #{$assetId}: checkout failed.";
