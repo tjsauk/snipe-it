@@ -623,7 +623,11 @@ public function templateAssetDetail(Asset $asset)
 		   $asset->eol_explicit = false;
         }
         $asset->supplier_id = $request->input('supplier_id', null);
-        $asset->expected_checkin = $request->input('expected_checkin', null);
+        // Don't overwrite expected_checkin (with its time) when the asset is checked out;
+        // the edit form datepicker only submits a date without time, which would lose the time component.
+        if (! $asset->assignedTo) {
+            $asset->expected_checkin = $request->input('expected_checkin', null);
+        }
         $asset->requestable = $request->input('requestable', 0);
         $asset->rtd_location_id = $request->input('rtd_location_id', null);
         $asset->byod = $request->input('byod', 0);
@@ -673,7 +677,16 @@ public function templateAssetDetail(Asset $asset)
 
         $asset->notes = $request->input('notes');
 
-        $asset = $request->handleImages($asset);
+        if ($request->filled('autofill_image_from_id') && $request->has('use_autofill_image')) {
+            $sourceAsset = Asset::select('image')->find($request->input('autofill_image_from_id'));
+            if ($sourceAsset && $sourceAsset->image && Storage::disk('public')->exists('assets/' . $sourceAsset->image)) {
+                $new_image_name = 'autofill-' . date('U') . '-' . $sourceAsset->image;
+                Storage::disk('public')->copy('assets/' . $sourceAsset->image, 'assets/' . $new_image_name);
+                $asset->image = $new_image_name;
+            }
+        } else {
+            $asset = $request->handleImages($asset);
+        }
 
         // Update custom fields in the database.
         // FIXME: No idea why this is returning a Builder error on db_column_name.

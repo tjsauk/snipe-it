@@ -287,32 +287,49 @@ class AssetsTransformer
     public function transformAssignedTo($asset)
     {
         if ($asset->checkedOutToUser()) {
-            return $asset->assignedTo ? [
-                    'id' => (int) $asset->assignedTo->id,
-                    'username' => e($asset->assignedTo->username),
-                    'name' => e($asset->assignedTo->getFullNameAttribute()),
-                    'first_name'=> e($asset->assignedTo->first_name),
-                    'last_name'=> ($asset->assignedTo->last_name) ? e($asset->assignedTo->last_name) : null,
-                    'email'=> ($asset->assignedTo->email) ? e($asset->assignedTo->email) : null,
-                    'employee_number' =>  ($asset->assignedTo->employee_num) ? e($asset->assignedTo->employee_num) : null,
-                    'jobtitle' => $asset->assignedTo->jobtitle ? e($asset->assignedTo->jobtitle) : null,
+            $user = $asset->assignedTo ?? \App\Models\User::withoutGlobalScopes()->find((int) $asset->assigned_to);
+            if ($user) {
+                return [
+                    'id' => (int) $user->id,
+                    'username' => e($user->username),
+                    'name' => e($user->getFullNameAttribute()),
+                    'first_name' => e($user->first_name),
+                    'last_name' => $user->last_name ? e($user->last_name) : null,
+                    'email' => $user->email ? e($user->email) : null,
+                    'employee_number' => $user->employee_num ? e($user->employee_num) : null,
+                    'jobtitle' => $user->jobtitle ? e($user->jobtitle) : null,
                     'type' => 'user',
-                ] : null;
+                ];
+            }
+            return null;
         }
 
         if ($asset->assignedTo) {
+            $assignedTo = $asset->assignedTo;
+            $name = $assignedTo->asset_tag
+                ? trim(($assignedTo->name ? $assignedTo->name . ' ' : '') . '#' . $assignedTo->asset_tag)
+                : ($assignedTo->name ?? null);
             return [
-                'id' => $asset->assignedTo->id,
-                'name' => e($asset->assignedTo->display_name),
+                'id' => $assignedTo->id,
+                'name' => $name ? e($name) : null,
                 'type' => $asset->assignedType()
             ];
         }
 
         // Relationship failed to load (e.g. company scope), but asset IS assigned - return fallback so checkin button shows
         if ($asset->assigned_to && $asset->assigned_type) {
+            $name = null;
+            if ($asset->assigned_type === \App\Models\Asset::class) {
+                $target = \App\Models\Asset::withoutGlobalScopes()->select(['id', 'name', 'asset_tag'])->find((int) $asset->assigned_to);
+                if ($target) {
+                    $name = $target->asset_tag
+                        ? trim(($target->name ? $target->name . ' ' : '') . '#' . $target->asset_tag)
+                        : $target->name;
+                }
+            }
             return [
                 'id' => (int) $asset->assigned_to,
-                'name' => null,
+                'name' => $name,
                 'type' => $asset->assignedType()
             ];
         }
