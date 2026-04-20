@@ -102,7 +102,7 @@
               <div style="padding: 15px;">
                 <p class="text-muted" id="assets-calendar-hint">
                   <i class="fa fa-info-circle"></i>
-                  Select assets using the checkboxes in the List tab, then switch here to see their reservations.
+                  Select assets using the checkboxes in the List tab, then switch here to view reservations and check out assets to yourself.
                 </p>
                 <div id="assets-cal-root"></div>
               </div>
@@ -122,24 +122,63 @@
 <script src="{{ asset('vendor/asset-calendar/asset-calendar.js') }}"></script>
 <script>
 (function() {
-    var currentUser = @json(Auth::user()->username ?? (string)Auth::id());
-    var tableId = '{{ (request()->has('status') ? e(request()->input('status')) : '') }}assetsListingTable';
+    var currentUser   = @json(Auth::user()->username ?? (string)Auth::id());
+    var currentUserId = @json(Auth::id());
+    var csrfToken     = (document.querySelector('meta[name="csrf-token"]') || {}).getAttribute('content') || '';
+    var tableId       = '{{ (request()->has('status') ? e(request()->input('status')) : '') }}assetsListingTable';
+    var bulkReserveUrl = '{{ route('hardware.bulkreserve.store') }}';
 
     jQuery('#assets-calendar-nav-tab').on('shown.bs.tab', loadAssetsCalendar);
 
     function getSelectedIds() {
+        var idSet = {};
+        // Hidden inputs persist across pagination pages
+        jQuery('input[name="ids[]"]').each(function() {
+            if (this.value) idSet[this.value] = true;
+        });
+        // Current page selections (may not overlap with hidden inputs on first check)
         try {
             var selections = jQuery('#' + tableId).bootstrapTable('getSelections');
-            if (selections && selections.length > 0) {
-                return selections.map(function(r) { return r.id; }).filter(Boolean);
+            if (selections) {
+                selections.forEach(function(r) { if (r.id) idSet[r.id] = true; });
             }
         } catch(e) {}
-        // Fallback: read from hidden inputs added by bulk-action checkbox handler
-        var ids = [];
-        jQuery('input[name="ids[]"]').each(function() {
-            if (this.value) ids.push(this.value);
+        return Object.keys(idSet);
+    }
+
+    function onCalendarConfirm(output) {
+        if (!output || !output.assets) return;
+        var hasAny = output.assets.some(function(a) {
+            return a.selectedPeriods && a.selectedPeriods.length > 0;
         });
-        return ids;
+        if (!hasAny) {
+            alert('No available periods found for the selected assets in this time range.');
+            return;
+        }
+
+        var ids  = getSelectedIds();
+        var form = document.createElement('form');
+        form.method = 'POST';
+        form.action = bulkReserveUrl;
+        form.style.display = 'none';
+
+        function addHidden(name, value) {
+            var el = document.createElement('input');
+            el.type = 'hidden'; el.name = name; el.value = value;
+            form.appendChild(el);
+        }
+
+        addHidden('_token', csrfToken);
+        addHidden('_from_quick', '1');
+        addHidden('checkout_to_type', 'user');
+        addHidden('assigned_user', currentUserId);
+
+        ids.forEach(function(id) { addHidden('selected_assets[]', id); });
+
+        addHidden('periods_json', JSON.stringify(output.assets));
+
+        document.body.appendChild(form);
+        form.submit();
     }
 
     function loadAssetsCalendar() {
@@ -154,27 +193,18 @@
         }
         if (hint) hint.style.display = 'none';
 
-        // Get CSRF token from meta tag
-        var csrfToken = document.querySelector('meta[name="csrf-token"]');
-        csrfToken = csrfToken ? csrfToken.getAttribute('content') : '';
-        
-        var headers = { 'X-Requested-With': 'XMLHttpRequest' };
-        if (csrfToken) {
-            headers['X-CSRF-TOKEN'] = csrfToken;
-        }
+        var headers = { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrfToken };
 
-        fetch('/api/v1/hardware/calendar-ranges?ids=' + ids.join(','), {
-            headers: headers
-        })
+        fetch('/api/v1/hardware/calendar-ranges?ids=' + ids.join(','), { headers: headers })
         .then(function(r) { return r.json(); })
         .then(function(assets) {
             if (typeof window.assetCalendarMount === 'function') {
                 window.assetCalendarMount(rootEl, {
-                    mode: 'view',
+                    mode: 'reserve',
                     currentUser: currentUser,
-                    continuousCutMode: true,
+                    continuousCutMode: false,
                     assets: assets
-                });
+                }, onCalendarConfirm);
             }
         });
     }

@@ -222,6 +222,7 @@ class BasketController extends Controller
                         $checkoutAt      = Carbon::now($tz)->format('Y-m-d H:i:s');
                         $expectedCheckin = $endBound->copy()->subMinute()->format('Y-m-d H:i:s');
                         if ($asset->checkOut($target, $admin, $checkoutAt, $expectedCheckin, null, $asset->name)) {
+                            $asset->absorbAdjacentReservations($reservationUserId, $endBound, $tz);
                             $assetReserved = true;
                         } else {
                             $errors[] = "Asset #{$assetId}: checkout failed.";
@@ -255,7 +256,7 @@ class BasketController extends Controller
                         ->where('status', 'active')
                         ->where('user_id', $reservationUserId)
                         ->where('reserved_from', '<', $endBound->format('Y-m-d H:i:s'))
-                        ->where('reserved_until', '>', $startDT->format('Y-m-d H:i:s'))
+                        ->where('reserved_until', '>=', $startDT->format('Y-m-d H:i:s'))
                         ->get();
 
                     if ($existingOwn->isNotEmpty()) {

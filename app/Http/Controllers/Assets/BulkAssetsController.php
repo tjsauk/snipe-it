@@ -963,9 +963,14 @@ class BulkAssetsController extends Controller
         $assetIds       = array_filter((array) $request->get('selected_assets', []));
         $periodsRaw     = $request->input('periods_json');
         $checkoutToType = $request->get('checkout_to_type', 'user');
+        $fromQuick      = (bool) $request->input('_from_quick', false);
+
+        $reserveFailRoute = $fromQuick
+            ? redirect()->route('hardware.index')
+            : redirect()->route('hardware.bulkreserve.show');
 
         if (empty($assetIds)) {
-            return redirect()->route('hardware.bulkreserve.show')
+            return $reserveFailRoute
                 ->with('error', trans('admin/hardware/message.update.no_assets_selected'));
         }
 
@@ -989,12 +994,12 @@ class BulkAssetsController extends Controller
                     continue;
                 }
                 $checkoutAt = \Carbon\Carbon::now($tz)->format('Y-m-d H:i:s');
-                if ($asset->checkOut($target, $admin, $checkoutAt, null)) {
+                if ($asset->checkOut($target, $admin, $checkoutAt, null, null, $asset->name)) {
                     $successCount++;
                 }
             }
             if ($successCount === 0) {
-                return redirect()->route('hardware.bulkreserve.show')
+                return $reserveFailRoute
                     ->with('error', 'No assets could be checked out.');
             }
             return redirect()->route('hardware.index')
@@ -1002,7 +1007,7 @@ class BulkAssetsController extends Controller
         }
 
         if (empty($periodsRaw)) {
-            return redirect()->route('hardware.bulkreserve.show')
+            return $reserveFailRoute
                 ->withInput()
                 ->with('error', 'No periods selected. Please drag a period in the calendar.');
         }
@@ -1010,7 +1015,7 @@ class BulkAssetsController extends Controller
         $periodsData = json_decode($periodsRaw, true);
 
         if (!is_array($periodsData) || empty($periodsData)) {
-            return redirect()->route('hardware.bulkreserve.show')
+            return $reserveFailRoute
                 ->withInput()
                 ->with('error', 'Invalid period data. Please try again.');
         }
@@ -1077,7 +1082,8 @@ class BulkAssetsController extends Controller
                         }
                         $checkoutAt      = Carbon::now($tz)->format('Y-m-d H:i:s');
                         $expectedCheckin = $endBound->copy()->subMinute()->format('Y-m-d H:i:s');
-                        if ($asset->checkOut($target, $admin, $checkoutAt, $expectedCheckin)) {
+                        if ($asset->checkOut($target, $admin, $checkoutAt, $expectedCheckin, null, $asset->name)) {
+                            $asset->absorbAdjacentReservations($reservationUserId, $endBound, $tz);
                             $successCount++;
                         } else {
                             $errors[] = "Asset #{$assetId}: checkout failed.";
@@ -1111,7 +1117,7 @@ class BulkAssetsController extends Controller
                         ->where('status', 'active')
                         ->where('user_id', $reservationUserId)
                         ->where('reserved_from', '<', $endBound->format('Y-m-d H:i:s'))
-                        ->where('reserved_until', '>', $startDT->format('Y-m-d H:i:s'))
+                        ->where('reserved_until', '>=', $startDT->format('Y-m-d H:i:s'))
                         ->get();
 
                     if ($existingOwn->isNotEmpty()) {
@@ -1162,7 +1168,7 @@ class BulkAssetsController extends Controller
         }
 
         if ($successCount === 0) {
-            return redirect()->route('hardware.bulkreserve.show')
+            return $reserveFailRoute
                 ->withInput()
                 ->with('error', 'No reservations were created. Assets may have no available slots in the selected period.');
         }
