@@ -300,11 +300,24 @@ class AssetsTransformer
                 ] : null;
         }
 
-        return $asset->assignedTo ? [
-            'id' => $asset->assignedTo->id,
-            'name' => e($asset->assignedTo->display_name),
-            'type' => $asset->assignedType()
-        ] : null;
+        if ($asset->assignedTo) {
+            return [
+                'id' => $asset->assignedTo->id,
+                'name' => e($asset->assignedTo->display_name),
+                'type' => $asset->assignedType()
+            ];
+        }
+
+        // Relationship failed to load (e.g. company scope), but asset IS assigned - return fallback so checkin button shows
+        if ($asset->assigned_to && $asset->assigned_type) {
+            return [
+                'id' => (int) $asset->assigned_to,
+                'name' => null,
+                'type' => $asset->assignedType()
+            ];
+        }
+
+        return null;
     }
 
 

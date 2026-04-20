@@ -90,102 +90,36 @@
                                             </div>
                                         </div>
 
-                                        <!-- Asset Name -->
-                                        @can('update', $asset)
-                                            <!-- Asset Name (editable) -->
-                                            <div class="form-group {{ $errors->has('name') ? 'error' : '' }}">
-                                                <label for="name" class="col-sm-3 control-label">
-                                                    {{ trans('general.name') }}
-                                                </label>
-                                                <div class="col-md-8">
-                                                    <input class="form-control"
-                                                        type="text"
-                                                        name="name"
-                                                        aria-label="name"
-                                                        id="name"
-                                                        value="{{ old('name', $asset->name) }}"/>
-                                                    {!! $errors->first('name', '<span class="alert-msg" aria-hidden="true"><i class="fas fa-times" aria-hidden="true"></i> :message</span>') !!}
-                                                </div>
+                                        <!-- Asset Name (read-only) -->
+                                        <div class="form-group">
+                                            <label for="name" class="col-sm-3 control-label">
+                                                {{ trans('general.name') }}
+                                            </label>
+                                            <div class="col-md-8">
+                                                <p class="form-control-static">
+                                                    {{ $asset->name }}
+                                                </p>
+                                                <input type="hidden" name="name" value="{{ $asset->name }}">
                                             </div>
-                                        @else
-                                            <!-- Asset Name (read-only, but still POST the original value) -->
-                                            <div class="form-group">
-                                                <label for="name" class="col-sm-3 control-label">
-                                                    {{ trans('general.name') }}
-                                                </label>
-                                                <div class="col-md-8">
-                                                    <p class="form-control-static">
-                                                        {{ $asset->name }}
-                                                    </p>
-
-                                                    {{-- Hidden input ensures name is always submitted correctly --}}
-                                                    <input type="hidden" name="name" value="{{ $asset->name }}">
-                                                </div>
-                                            </div>
-                                        @endcan
+                                        </div>
 
                                         <!-- Status -->
-                                        @can('update', $asset)
-                                            <!-- Status -->
-                                            <div class="form-group {{ $errors->has('status_id') ? 'error' : '' }}">
-                                                <label for="status_id" class="col-sm-3 control-label">
-                                                    {{ trans('admin/hardware/form.status') }}
-                                                </label>
-                                                <div class="col-md-8 required">
-                                                    <x-input.select
-                                                        name="status_id"
-                                                        id="modal-statuslabel_types"
-                                                        :options="$statusLabel_list"
-                                                        style="width: 100%"
-                                                        aria-label="status_id"
-                                                    />
-                                                    {!! $errors->first('status_id', '<span class="alert-msg" aria-hidden="true"><i class="fas fa-times" aria-hidden="true"></i> :message</span>') !!}
-                                                </div>
+                                        <div class="form-group {{ $errors->has('status_id') ? 'error' : '' }}">
+                                            <label for="status_id" class="col-sm-3 control-label">
+                                                {{ trans('admin/hardware/form.status') }}
+                                            </label>
+                                            <div class="col-md-8 required">
+                                                <x-input.select
+                                                    name="status_id"
+                                                    id="modal-statuslabel_types"
+                                                    :options="$statusLabel_list"
+                                                    style="width: 100%"
+                                                    aria-label="status_id"
+                                                />
+                                                {!! $errors->first('status_id', '<span class="alert-msg" aria-hidden="true"><i class="fas fa-times" aria-hidden="true"></i> :message</span>') !!}
+                                                <small class="help-block">Select <strong>Maintenance</strong> if the asset is broken.</small>
                                             </div>
-                                        @endcan
-
-                                        @can('update', $asset)
-                                            {{-- Editable location + location update options --}}
-                                            <x-input.location-select
-                                                :label="trans('general.location')"
-                                                name="location_id"
-                                                :help_text="($asset->defaultLoc) ? trans('general.checkin_to_diff_location', ['default_location' => $asset->defaultLoc->name]) : null"
-                                                :selected="old('location_id')"
-                                            />
-
-                                            <!-- Update actual location  -->
-                                            <div class="form-group">
-                                                <div class="col-md-9 col-md-offset-3">
-                                                    <label class="form-control">
-                                                        <input name="update_default_location" type="radio" value="1" checked="checked" aria-label="update_default_location" />
-                                                        {{ trans('admin/hardware/form.asset_location') }}
-                                                    </label>
-                                                    <label class="form-control">
-                                                        <input name="update_default_location" type="radio" value="0" aria-label="update_default_location" />
-                                                        {{ trans('admin/hardware/form.asset_location_update_default_current') }}
-                                                    </label>
-                                                </div>
-                                            </div> <!--/form-group-->
-                                        @else
-                                            {{-- Read-only location --}}
-                                            <div class="form-group">
-                                                <label class="col-sm-3 control-label">
-                                                    {{ trans('general.location') }}
-                                                </label>
-                                                <div class="col-md-8">
-                                                    <p class="form-control-static">
-                                                        @if ($asset->location)
-                                                            {{ $asset->location->name }}
-                                                        @elseif ($asset->defaultLoc)
-                                                            {{ $asset->defaultLoc->name }}
-                                                        @else
-                                                            {{ trans('general.unknown') }}
-                                                        @endif
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        @endcan
-                                            <!--/form-group-->
+                                        </div>
 
                                         <!-- Note -->
                                         <div class="form-group {{ $errors->has('note') ? 'error' : '' }}">

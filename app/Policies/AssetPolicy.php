@@ -151,7 +151,6 @@ class AssetPolicy extends CheckoutablePermissionsPolicy
             $parent = Asset::find($item->assigned_to);
 
             if (! $parent) {
-                // If the parent is missing for some reason, anyone can checkin
                 return true;
             }
 
@@ -166,8 +165,8 @@ class AssetPolicy extends CheckoutablePermissionsPolicy
                 return (int) $parent->assigned_to === (int) $user->id;
             }
 
-            // Parent is checked out to some other type; be conservative
-            return false;
+            // Anyone with checkin permission can check in otherwise
+            return $checkinPerm;
         }
 
         // Fallback for any other assignment type
