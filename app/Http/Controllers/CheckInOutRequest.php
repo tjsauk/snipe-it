@@ -43,14 +43,10 @@ trait CheckInOutRequest
                 break;
             case 'asset':
                 $asset->location_id = $target->rtd_location_id;
-                // Override with the asset's location_id if it has one
-                if ($target->location_id != '') {
-                    $asset->location_id = $target->location_id;
-                }
                 break;
             case 'user':
-                    $asset->location_id = $target->location_id;
-                    break;
+                // location_id intentionally not changed on checkout to user
+                break;
         }
 
         return $asset;
