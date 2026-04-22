@@ -1,7 +1,3 @@
-{{--
-    QR-skanneri modal – sisältyy default.blade.php:ssä
-    CSS ja JS ladataan erikseen layoutissa.
---}}
 @php
     $scannerReaderId = $scannerReaderId ?? 'nav-qr-reader';
 @endphp
@@ -22,60 +18,60 @@
 
                 <div class="nav-qr-actions">
                     <button type="button" class="btn btn-default" data-nav-qr-start>
-                        <i class="fa fa-video-camera"></i> Avaa kamera
+                        <i class="fa fa-video-camera"></i> Open camera
                     </button>
                     <button type="button" class="btn btn-default" data-nav-qr-stop>
-                        <i class="fa fa-stop"></i> Pysäytä kamera
+                        <i class="fa fa-stop"></i> Stop camera
                     </button>
                     <button type="button" class="btn btn-default" data-nav-qr-close>
-                        <i class="fa fa-times"></i> Sulje
+                        <i class="fa fa-times"></i> Close
                     </button>
                 </div>
 
-                <div class="nav-qr-status" data-nav-qr-status>Kamera odottaa.</div>
+                <div class="nav-qr-status" data-nav-qr-status>Camera is idle.</div>
 
                 <div class="nav-qr-box">
-                    <label class="nav-qr-box-label" for="nav-qr-manual-input">Manuaalinen syöte</label>
+                    <label class="nav-qr-box-label" for="nav-qr-manual-input">Manual input</label>
                     <input
                         id="nav-qr-manual-input"
                         type="text"
                         class="nav-qr-manual-input"
                         data-nav-qr-manual-input
-                        placeholder="Liitä QR-URL tai polku joka sisältää /reitti"
+                        placeholder="Paste QR URL or any path containing /route"
                     >
                     <div class="nav-qr-actions">
                         <button type="button" class="btn btn-default" data-nav-qr-parse-manual>
-                            <i class="fa fa-search"></i> Tulkitse arvo
+                            <i class="fa fa-search"></i> Parse value
                         </button>
                     </div>
                 </div>
 
                 <div class="nav-qr-box">
-                    <span class="nav-qr-box-label">Skannattu arvo</span>
+                    <span class="nav-qr-box-label">Raw value</span>
                     <div class="nav-qr-mono" data-nav-qr-raw>—</div>
                 </div>
 
                 <div class="nav-qr-box">
-                    <span class="nav-qr-box-label">Tunnistettu reitti</span>
+                    <span class="nav-qr-box-label">Resolved route</span>
                     <div class="nav-qr-mono" data-nav-qr-route>—</div>
                 </div>
 
                 <div class="nav-qr-box">
-                    <span class="nav-qr-box-label">Reittimatch</span>
-                    <div data-nav-qr-match>Ei skannausta vielä.</div>
+                    <span class="nav-qr-box-label">Pattern match</span>
+                    <div data-nav-qr-match>No scan yet.</div>
                 </div>
             </div>
 
             <div class="nav-qr-footer">
                 <div class="nav-qr-actions">
                     <button type="button" class="btn btn-primary" data-nav-qr-use-route disabled>
-                        <i class="fa fa-arrow-right"></i> Avaa reitti
+                        <i class="fa fa-arrow-right"></i> Use scanned route
                     </button>
                     <button type="button" class="btn btn-primary" data-nav-qr-open-tab disabled>
-                        <i class="fa fa-external-link"></i> Avaa tässä välilehdessä
+                        <i class="fa fa-external-link"></i> Open in new tab
                     </button>
                     <button type="button" class="btn btn-default" data-nav-qr-close>
-                        <i class="fa fa-times"></i> Peruuta
+                        <i class="fa fa-times"></i> Cancel
                     </button>
                 </div>
             </div>

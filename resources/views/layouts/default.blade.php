@@ -916,8 +916,8 @@
                             {{-- QR-skanneri painike navbarissa --}}
                             @can('index', \App\Models\Asset::class)
                                 <li aria-hidden="true" id="nav-qr-scanner-item">
-                                    <a href="javascript:void(0)"
-                                       data-nav-qr-open
+                                    <a href="#"
+                                       onclick="openNavQrScanner(); return false;"
                                        tabindex="-1"
                                        data-tooltip="true"
                                        data-placement="bottom"
@@ -1930,27 +1930,8 @@
 
         {{-- QR-skanneri JS --}}
         @can('index', \App\Models\Asset::class)
-        <script src="https://unpkg.com/html5-qrcode" nonce="{{ csrf_token() }}"></script>
+        <script src="https://unpkg.com/html5-qrcode"></script>
         <script src="{{ asset('js/snipeit-nav-qr-scanner.js') }}" nonce="{{ csrf_token() }}"></script>
-        <script nonce="{{ csrf_token() }}">
-            // Wire navbar button (outside scanner container) to open the modal
-            (function () {
-                function wireQrBtn() {
-                    var btn = document.getElementById('nav-qr-scan-btn');
-                    if (btn && window.__snipeItNavQrScanner) {
-                        btn.addEventListener('click', function (e) {
-                            e.preventDefault();
-                            window.__snipeItNavQrScanner.open();
-                        });
-                    }
-                }
-                if (document.readyState === 'loading') {
-                    document.addEventListener('DOMContentLoaded', wireQrBtn);
-                } else {
-                    wireQrBtn();
-                }
-            })();
-        </script>
         @endcan
 
         @section('moar_scripts')

@@ -88,12 +88,11 @@
       });
     }
 
-    var close = $(this.options.closeSelector, this.root);
-    if (close) {
-      close.addEventListener('click', function () {
+    this.root.querySelectorAll(this.options.closeSelector).forEach(function (btn) {
+      btn.addEventListener('click', function () {
         self.close();
       });
-    }
+    });
 
     var stop = $(this.options.stopSelector, this.root);
     if (stop) {
@@ -124,7 +123,7 @@
 
     if (this.openInTabButton) {
       this.openInTabButton.addEventListener('click', function () {
-        self.navigateToCurrentRoute();
+        self.openInNewTab();
       });
     }
 
@@ -304,16 +303,26 @@
 
   SnipeItNavQrScanner.prototype.navigateToCurrentRoute = function () {
     if (!this.currentRoute) return;
-
-    if (this.options.confirmBeforeNavigate) {
-      var accepted = window.confirm('Open this route in the current tab?\n\n' + this.currentRoute);
-      if (!accepted) return;
-    }
-
     window.location.assign(this.currentRoute);
   };
 
+  SnipeItNavQrScanner.prototype.openInNewTab = function () {
+    if (!this.currentRoute) return;
+    window.open(this.currentRoute, '_blank');
+  };
+
   window.SnipeItNavQrScanner = SnipeItNavQrScanner;
+
+  // Global function – callable from onclick anywhere in the page
+  window.openNavQrScanner = function () {
+    if (window.__snipeItNavQrScanner) {
+      window.__snipeItNavQrScanner.open();
+    } else {
+      // Scanner not yet ready – show modal directly via CSS class
+      var modal = document.querySelector('[data-nav-qr-modal]');
+      if (modal) { modal.classList.add('is-open'); }
+    }
+  };
 
   document.addEventListener('DOMContentLoaded', function () {
     var root = document.querySelector('[data-nav-qr-scanner]');
