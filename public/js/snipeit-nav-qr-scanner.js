@@ -175,27 +175,51 @@
 
     this.html5QrCode = new window.Html5Qrcode(this.reader.id);
 
-    window.Html5Qrcode.getCameras()
-      .then(function (cameras) {
-        var cameraConfig = cameras && cameras.length ? cameras[0].id : { facingMode: 'environment' };
+    // Prefer rear camera; fall back to any available camera
+    var cameraConstraints = { facingMode: { ideal: 'environment' } };
 
-        return self.html5QrCode.start(
-          cameraConfig,
-          {
-            fps: 10,
-            qrbox: function (width, height) {
-              var edge = Math.floor(Math.min(width, height) * 0.75);
-              return { width: edge, height: edge };
-            },
-            rememberLastUsedCamera: true
+    self.html5QrCode.start(
+      cameraConstraints,
+      {
+        fps: 10,
+        qrbox: function (width, height) {
+          var edge = Math.floor(Math.min(width, height) * 0.75);
+          return { width: edge, height: edge };
+        },
+        rememberLastUsedCamera: true,
+        // Request zoom capability where supported (silently ignored if not available)
+        videoConstraints: {
+          facingMode: { ideal: 'environment' },
+          advanced: [{ zoom: 2.0 }]
+        }
+      },
+      function (decodedText) {
+        if (self.manualInput) self.manualInput.value = decodedText;
+        self.applyScanValue(decodedText);
+      },
+      function () {}
+    )
+    .then(function () {
+      self.setStatus('Camera opened. Point at an asset or location QR code.', 'is-good');
+    })
+    .catch(function () {
+      // Zoom constraint rejected — retry without it
+      self.html5QrCode.start(
+        { facingMode: { ideal: 'environment' } },
+        {
+          fps: 10,
+          qrbox: function (width, height) {
+            var edge = Math.floor(Math.min(width, height) * 0.75);
+            return { width: edge, height: edge };
           },
-          function (decodedText) {
-            if (self.manualInput) self.manualInput.value = decodedText;
-            self.applyScanValue(decodedText);
-          },
-          function () {}
-        );
-      })
+          rememberLastUsedCamera: true
+        },
+        function (decodedText) {
+          if (self.manualInput) self.manualInput.value = decodedText;
+          self.applyScanValue(decodedText);
+        },
+        function () {}
+      )
       .then(function () {
         self.setStatus('Camera opened. Point at an asset or location QR code.', 'is-good');
       })
@@ -203,6 +227,7 @@
         self.setStatus('Could not start camera: ' + self.errorMessage(error), 'is-bad');
         self.html5QrCode = null;
       });
+    });
   };
 
   SnipeItNavQrScanner.prototype.stopScanner = function () {
