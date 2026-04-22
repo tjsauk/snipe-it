@@ -175,57 +175,50 @@
 
     this.html5QrCode = new window.Html5Qrcode(this.reader.id);
 
-    // Prefer rear camera; fall back to any available camera
-    var cameraConstraints = { facingMode: { ideal: 'environment' } };
+    var qrbox = function (width, height) {
+      var edge = Math.floor(Math.min(width, height) * 0.75);
+      return { width: edge, height: edge };
+    };
 
-    self.html5QrCode.start(
-      cameraConstraints,
-      {
-        fps: 10,
-        qrbox: function (width, height) {
-          var edge = Math.floor(Math.min(width, height) * 0.75);
-          return { width: edge, height: edge };
-        },
-        rememberLastUsedCamera: true,
-        // Request zoom capability where supported (silently ignored if not available)
-        videoConstraints: {
-          facingMode: { ideal: 'environment' },
-          advanced: [{ zoom: 2.0 }]
-        }
-      },
-      function (decodedText) {
-        if (self.manualInput) self.manualInput.value = decodedText;
-        self.applyScanValue(decodedText);
-      },
-      function () {}
-    )
-    .then(function () {
+    var onDecode = function (decodedText) {
+      if (self.manualInput) self.manualInput.value = decodedText;
+      self.applyScanValue(decodedText);
+    };
+
+    var onSuccess = function () {
       self.setStatus('Camera opened. Point at an asset or location QR code.', 'is-good');
-    })
+    };
+
+    var onFail = function (error) {
+      self.setStatus('Could not start camera: ' + self.errorMessage(error), 'is-bad');
+      self.html5QrCode = null;
+    };
+
+    // Attempt 1: rear camera string form (widest Android compatibility) + zoom
+    self.html5QrCode.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: qrbox, rememberLastUsedCamera: true,
+        videoConstraints: { facingMode: { ideal: 'environment' }, advanced: [{ zoom: 2.0 }] } },
+      onDecode, function () {}
+    )
+    .then(onSuccess)
     .catch(function () {
-      // Zoom constraint rejected — retry without it
+      // Attempt 2: rear camera string form, no zoom
       self.html5QrCode.start(
-        { facingMode: { ideal: 'environment' } },
-        {
-          fps: 10,
-          qrbox: function (width, height) {
-            var edge = Math.floor(Math.min(width, height) * 0.75);
-            return { width: edge, height: edge };
-          },
-          rememberLastUsedCamera: true
-        },
-        function (decodedText) {
-          if (self.manualInput) self.manualInput.value = decodedText;
-          self.applyScanValue(decodedText);
-        },
-        function () {}
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: qrbox, rememberLastUsedCamera: true },
+        onDecode, function () {}
       )
-      .then(function () {
-        self.setStatus('Camera opened. Point at an asset or location QR code.', 'is-good');
-      })
-      .catch(function (error) {
-        self.setStatus('Could not start camera: ' + self.errorMessage(error), 'is-bad');
-        self.html5QrCode = null;
+      .then(onSuccess)
+      .catch(function () {
+        // Attempt 3: any camera (no facing preference)
+        self.html5QrCode.start(
+          { facingMode: 'user' },
+          { fps: 10, qrbox: qrbox },
+          onDecode, function () {}
+        )
+        .then(onSuccess)
+        .catch(onFail);
       });
     });
   };
