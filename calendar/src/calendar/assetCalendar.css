@@ -97,3 +97,11 @@ button, select, input { font: inherit; }
   .month-day-strip{left:3px;right:3px;}
   .month-draft-outline{left:3px;right:3px;}
 }
+
+@media (max-width: 480px) {
+  .calendar-toolbar button,
+  .calendar-toolbar select{font-size:.78rem;padding:5px 6px;}
+  .toolbar-nav-row{grid-template-columns:repeat(3, minmax(0, 1fr));}
+  .toolbar-nav-row select{grid-column:1 / -1;}
+  .toolbar-action-row{grid-template-columns:repeat(auto-fit, minmax(70px, 1fr));}
+}
