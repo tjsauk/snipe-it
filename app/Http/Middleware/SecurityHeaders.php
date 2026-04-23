@@ -42,7 +42,7 @@ class SecurityHeaders
 
         $feature_policy[] = "accelerometer 'none'";
         $feature_policy[] = "autoplay 'none'";
-        $feature_policy[] = "camera 'none'";
+        $feature_policy[] = "camera 'self'";
         $feature_policy[] = "display-capture 'none'";
         $feature_policy[] = "document-domain 'none'";
         $feature_policy[] = "encrypted-media 'none'";

@@ -33,6 +33,8 @@
       stopSelector: '[data-nav-qr-stop]',
       startSelector: '[data-nav-qr-start]',
       statusSelector: '[data-nav-qr-status]',
+      fileInputSelector: '[data-nav-qr-file-input]',
+      takePhotoSelector: '[data-nav-qr-take-photo]',
       autoStart: true,
       confirmBeforeNavigate: true,
       scannerScriptReadyCheck: function () {
@@ -77,6 +79,7 @@
     this.status = $(this.options.statusSelector, this.root);
 
     this.bindEvents();
+    this.bindFileInput();
   };
 
   SnipeItNavQrScanner.prototype.bindEvents = function () {
@@ -136,6 +139,45 @@
     }
   };
 
+  SnipeItNavQrScanner.prototype.bindFileInput = function () {
+    var self = this;
+    var fileInput = $(this.options.fileInputSelector, this.root);
+    var takePhotoBtn = $(this.options.takePhotoSelector, this.root);
+
+    if (takePhotoBtn && fileInput) {
+      takePhotoBtn.addEventListener('click', function () {
+        fileInput.value = '';
+        fileInput.click();
+      });
+    }
+
+    if (fileInput) {
+      fileInput.addEventListener('change', function () {
+        var file = fileInput.files && fileInput.files[0];
+        if (!file) return;
+        self.scanFromFile(file);
+      });
+    }
+  };
+
+  SnipeItNavQrScanner.prototype.scanFromFile = function (file) {
+    var self = this;
+    if (!this.options.scannerScriptReadyCheck()) {
+      this.setStatus('Scanner library is not loaded.', 'is-bad');
+      return;
+    }
+    this.setStatus('Processing image…', '');
+    var scanner = new window.Html5Qrcode(this.reader.id);
+    scanner.scanFile(file, false)
+      .then(function (decodedText) {
+        if (self.manualInput) self.manualInput.value = decodedText;
+        self.applyScanValue(decodedText);
+      })
+      .catch(function () {
+        self.setStatus('No QR code found in image. Try a clearer photo.', 'is-bad');
+      });
+  };
+
   SnipeItNavQrScanner.prototype.setStatus = function (message, stateClass) {
     if (!this.status) return;
     this.status.className = 'nav-qr-status' + (stateClass ? ' ' + stateClass : '');
@@ -144,6 +186,8 @@
 
   SnipeItNavQrScanner.prototype.open = function () {
     if (!this.modal) return;
+    var takePhotoBtn = $(this.options.takePhotoSelector, this.root);
+    if (takePhotoBtn) takePhotoBtn.style.display = 'none';
     this.modal.classList.add('is-open');
     if (this.options.autoStart) {
       this.startScanner();
@@ -189,9 +233,11 @@
       self.setStatus('Camera opened. Point at an asset or location QR code.', 'is-good');
     };
 
-    var onFail = function (error) {
-      self.setStatus('Could not start camera: ' + self.errorMessage(error), 'is-bad');
+    var onFail = function () {
       self.html5QrCode = null;
+      self.setStatus('Camera blocked — tap “Take Photo” to use your device camera app instead.', 'is-warn');
+      var takePhotoBtn = $(self.options.takePhotoSelector, self.root);
+      if (takePhotoBtn) takePhotoBtn.style.display = '';
     };
 
     // Attempt 1: rear camera string form (widest Android compatibility) + zoom
@@ -225,6 +271,8 @@
 
   SnipeItNavQrScanner.prototype.stopScanner = function () {
     var self = this;
+    var takePhotoBtn = $(this.options.takePhotoSelector, this.root);
+    if (takePhotoBtn) takePhotoBtn.style.display = 'none';
     if (!this.html5QrCode) return;
 
     var instance = this.html5QrCode;

@@ -23,43 +23,18 @@
                     <button type="button" class="btn btn-default" data-nav-qr-stop>
                         <i class="fa fa-stop"></i> Stop camera
                     </button>
+                    <button type="button" class="btn btn-default" data-nav-qr-take-photo style="display:none">
+                        <i class="fa fa-camera"></i> Take Photo
+                    </button>
                     <button type="button" class="btn btn-default" data-nav-qr-close>
                         <i class="fa fa-times"></i> Close
                     </button>
                 </div>
+                <input type="file" accept="image/*" capture="environment"
+                       data-nav-qr-file-input style="display:none" aria-hidden="true">
 
                 <div class="nav-qr-status" data-nav-qr-status>Camera is idle.</div>
 
-                <div class="nav-qr-box">
-                    <label class="nav-qr-box-label" for="nav-qr-manual-input">Manual input</label>
-                    <input
-                        id="nav-qr-manual-input"
-                        type="text"
-                        class="nav-qr-manual-input"
-                        data-nav-qr-manual-input
-                        placeholder="Paste QR URL or any path containing /route"
-                    >
-                    <div class="nav-qr-actions">
-                        <button type="button" class="btn btn-default" data-nav-qr-parse-manual>
-                            <i class="fa fa-search"></i> Parse value
-                        </button>
-                    </div>
-                </div>
-
-                <div class="nav-qr-box">
-                    <span class="nav-qr-box-label">Raw value</span>
-                    <div class="nav-qr-mono" data-nav-qr-raw>—</div>
-                </div>
-
-                <div class="nav-qr-box">
-                    <span class="nav-qr-box-label">Resolved route</span>
-                    <div class="nav-qr-mono" data-nav-qr-route>—</div>
-                </div>
-
-                <div class="nav-qr-box">
-                    <span class="nav-qr-box-label">Pattern match</span>
-                    <div data-nav-qr-match>No scan yet.</div>
-                </div>
             </div>
 
             <div class="nav-qr-footer">
