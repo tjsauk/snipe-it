@@ -16,6 +16,13 @@
             <div class="nav-qr-body">
                 <div id="{{ $scannerReaderId }}" class="nav-qr-reader" data-nav-qr-reader></div>
 
+                <div class="nav-qr-zoom" data-nav-qr-zoom style="display:none" aria-hidden="true">
+                    <i class="fa fa-search fa-fw nav-qr-zoom-icon"></i>
+                    <input type="range" class="nav-qr-zoom-slider" data-nav-qr-zoom-slider
+                           min="1" max="5" step="0.1" value="1" aria-label="Camera zoom">
+                    <i class="fa fa-search-plus fa-fw nav-qr-zoom-icon"></i>
+                </div>
+
                 <div class="nav-qr-actions">
                     <button type="button" class="btn btn-default" data-nav-qr-start>
                         <i class="fa fa-video-camera"></i> Open camera

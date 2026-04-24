@@ -1312,3 +1312,52 @@ Radio toggle styles for permission settings and check/uncheck all
 .deleted {
   text-decoration: line-through;
 }
+
+// Mobile: make nav-tabs a single scrollable row so they never wrap
+// onto tab content below. Thin scrollbar hints that more tabs exist.
+@media screen and (max-width: 768px) {
+  .nav-tabs-custom > .nav-tabs {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: #94a3b8 transparent;
+    &::-webkit-scrollbar {
+      height: 3px;
+    }
+    &::-webkit-scrollbar-thumb {
+      background: #94a3b8;
+      border-radius: 2px;
+    }
+    // Bootstrap clearfix pseudo-elements become unwanted flex items
+    &::before,
+    &::after {
+      display: none;
+    }
+  }
+
+  // In flexbox, z-index activates on flex children even without position:relative.
+  // Reset it so tabs don't stack on top of the tab-content below.
+  // Also override Bootstrap float:left and pull-right's float:right !important.
+  .nav-tabs-custom > .nav-tabs > li {
+    float: none !important;
+    flex-shrink: 0;
+    z-index: auto;
+    margin-right: 2px;
+  }
+
+  .nav-tabs-custom > .nav-tabs > li.pull-right {
+    float: none !important;
+    margin-left: 0;
+  }
+
+  // Compact tabs: smaller padding + icon so more fit before scrolling
+  .nav-tabs-custom > .nav-tabs > li > a {
+    padding: 6px 8px;
+  }
+
+  .nav-tabs-custom > .nav-tabs > li > a .fa-2x {
+    font-size: 1.15em;
+  }
+}

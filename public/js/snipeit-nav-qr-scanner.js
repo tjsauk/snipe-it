@@ -35,6 +35,8 @@
       statusSelector: '[data-nav-qr-status]',
       fileInputSelector: '[data-nav-qr-file-input]',
       takePhotoSelector: '[data-nav-qr-take-photo]',
+      zoomSelector: '[data-nav-qr-zoom]',
+      zoomSliderSelector: '[data-nav-qr-zoom-slider]',
       autoStart: true,
       confirmBeforeNavigate: true,
       scannerScriptReadyCheck: function () {
@@ -80,6 +82,8 @@
 
     this.bindEvents();
     this.bindFileInput();
+    this.bindZoom();
+    this.bindTapToFocus();
   };
 
   SnipeItNavQrScanner.prototype.bindEvents = function () {
@@ -160,6 +164,62 @@
     }
   };
 
+  SnipeItNavQrScanner.prototype.bindZoom = function () {
+    var self = this;
+    var slider = $(this.options.zoomSliderSelector, this.root);
+    if (!slider) return;
+    slider.addEventListener('input', function () {
+      self.applyZoom(parseFloat(slider.value));
+    });
+  };
+
+  SnipeItNavQrScanner.prototype.bindTapToFocus = function () {
+    var self = this;
+    if (!this.reader) return;
+    this.reader.addEventListener('click', function (e) {
+      self.handleTapToFocus(e.clientX, e.clientY);
+    });
+    this.reader.addEventListener('touchend', function (e) {
+      if (e.changedTouches.length === 1) {
+        e.preventDefault();
+        self.handleTapToFocus(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+      }
+    }, { passive: false });
+  };
+
+  SnipeItNavQrScanner.prototype.handleTapToFocus = function (clientX, clientY) {
+    if (!this._focusTrack) return;
+    var rect = this.reader.getBoundingClientRect();
+    var x = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    var y = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
+    this._focusTrack.applyConstraints({
+      advanced: [{ focusMode: 'manual', pointOfInterest: { x: x, y: y } }]
+    }).catch(function () {});
+    this.showFocusRing(clientX - rect.left, clientY - rect.top);
+  };
+
+  SnipeItNavQrScanner.prototype.showFocusRing = function (x, y) {
+    var el = document.createElement('div');
+    el.className = 'nav-qr-focus-ring';
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    this.reader.appendChild(el);
+    setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 900);
+  };
+
+  SnipeItNavQrScanner.prototype.applyZoom = function (value) {
+    if (this._zoomTrack) {
+      this._zoomTrack.applyConstraints({ advanced: [{ zoom: value }] });
+    } else {
+      this.applyCssZoom(value);
+    }
+  };
+
+  SnipeItNavQrScanner.prototype.applyCssZoom = function (value) {
+    var video = this.reader && this.reader.querySelector('video');
+    if (video) video.style.transform = value === 1 ? '' : 'scale(' + value + ')';
+  };
+
   SnipeItNavQrScanner.prototype.scanFromFile = function (file) {
     var self = this;
     if (!this.options.scannerScriptReadyCheck()) {
@@ -188,6 +248,10 @@
     if (!this.modal) return;
     var takePhotoBtn = $(this.options.takePhotoSelector, this.root);
     if (takePhotoBtn) takePhotoBtn.style.display = 'none';
+    var zoomEl = $(this.options.zoomSelector, this.root);
+    if (zoomEl) { zoomEl.style.display = 'none'; zoomEl.setAttribute('aria-hidden', 'true'); }
+    var slider = $(this.options.zoomSliderSelector, this.root);
+    if (slider) slider.value = '1';
     this.modal.classList.add('is-open');
     if (this.options.autoStart) {
       this.startScanner();
@@ -231,6 +295,18 @@
 
     var onSuccess = function () {
       self.setStatus('Camera opened. Point at an asset or location QR code.', 'is-good');
+      // Detect hardware zoom support via the live track's capabilities
+      var video = self.reader && self.reader.querySelector('video');
+      var stream = video && video.srcObject;
+      var track = stream && stream.getVideoTracks && stream.getVideoTracks()[0];
+      var caps = track && track.getCapabilities && track.getCapabilities();
+      self._zoomTrack = (caps && caps.zoom) ? track : null;
+      self._focusTrack = (caps && caps.focusMode && caps.focusMode.indexOf('manual') !== -1) ? track : null;
+      if (self._focusTrack) self.reader.classList.add('is-focusable');
+      var zoomEl = $(self.options.zoomSelector, self.root);
+      if (zoomEl) { zoomEl.style.display = ''; zoomEl.removeAttribute('aria-hidden'); }
+      var slider = $(self.options.zoomSliderSelector, self.root);
+      if (slider) slider.value = '1';
     };
 
     var onFail = function () {
@@ -273,6 +349,13 @@
     var self = this;
     var takePhotoBtn = $(this.options.takePhotoSelector, this.root);
     if (takePhotoBtn) takePhotoBtn.style.display = 'none';
+    var zoomEl = $(this.options.zoomSelector, this.root);
+    if (zoomEl) { zoomEl.style.display = 'none'; zoomEl.setAttribute('aria-hidden', 'true'); }
+    var slider = $(this.options.zoomSliderSelector, this.root);
+    if (slider) slider.value = '1';
+    this._zoomTrack = null;
+    this._focusTrack = null;
+    if (this.reader) this.reader.classList.remove('is-focusable');
     if (!this.html5QrCode) return;
 
     var instance = this.html5QrCode;
