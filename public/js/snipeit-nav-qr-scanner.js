@@ -229,7 +229,7 @@
       return;
     }
 
-    // Zoom nudge — last resort for devices with no focusMode support
+    // Zoom nudge — triggers autofocus on devices with no focusMode support
     if (caps.zoom) {
       var settings = track.getSettings ? track.getSettings() : {};
       var current = settings.zoom || caps.zoom.min || 1;
@@ -239,7 +239,12 @@
           return track.applyConstraints({ advanced: [{ zoom: current }] });
         })
         .catch(function () {});
+      return;
     }
+
+    // Blind attempt — getCapabilities() may have returned incomplete data at camera start;
+    // try continuous autofocus anyway, failures are silent
+    track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(function () {});
   };
 
   SnipeItNavQrScanner.prototype.showFocusRing = function (x, y) {
@@ -342,19 +347,19 @@
 
     var onSuccess = function () {
       self.setStatus('Camera opened. Point at an asset or location QR code.', 'is-good');
-      // Detect hardware zoom support via the live track's capabilities
       var video = self.reader && self.reader.querySelector('video');
       var stream = video && video.srcObject;
       var track = stream && stream.getVideoTracks && stream.getVideoTracks()[0];
+      // Zoom: check immediately — capability is reliable for zoom
       var caps = track && track.getCapabilities && track.getCapabilities();
       self._zoomTrack = (caps && caps.zoom) ? track : null;
-      // Focus track: any device that exposes focusMode or zoom can be nudged to refocus
-      var canFocus = caps && (caps.focusMode && caps.focusMode.length > 0 || caps.zoom);
-      self._focusTrack = canFocus ? track : null;
+      // Focus: always set if track exists — getCapabilities() can return incomplete
+      // data right after start; we try constraints anyway and catch failures silently
+      self._focusTrack = track || null;
       if (self._focusTrack) {
         self.reader.classList.add('is-focusable');
-        // Small delay — some devices aren't fully ready to accept constraints at onSuccess
-        setTimeout(function () { self.refocusCamera(); }, 400);
+        // Delay so camera is fully initialised before applying focus constraints
+        setTimeout(function () { self.refocusCamera(); }, 600);
       }
       var zoomEl = $(self.options.zoomSelector, self.root);
       if (zoomEl) { zoomEl.style.display = ''; zoomEl.removeAttribute('aria-hidden'); }
