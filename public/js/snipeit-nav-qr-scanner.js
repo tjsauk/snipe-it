@@ -190,26 +190,46 @@
   SnipeItNavQrScanner.prototype.handleTapToFocus = function (clientX, clientY) {
     if (!this._focusTrack) return;
     var rect = this.reader.getBoundingClientRect();
+    var x = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    var y = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
     this.showFocusRing(clientX - rect.left, clientY - rect.top);
-    this.refocusCamera();
+    this.refocusCamera(x, y);
   };
 
-  SnipeItNavQrScanner.prototype.refocusCamera = function () {
+  SnipeItNavQrScanner.prototype.refocusCamera = function (x, y) {
     var track = this._focusTrack;
     if (!track) return;
     var caps = track.getCapabilities ? track.getCapabilities() : {};
+    var hasPoi = typeof x === 'number' && typeof y === 'number';
 
-    // 1. Continuous autofocus (best, re-triggers on most Androids)
     if (caps.focusMode && caps.focusMode.indexOf('continuous') !== -1) {
-      track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(function () {});
+      // Single-shot → continuous cycle forces immediate re-focus on many Androids
+      // (Samsung etc. won't re-trigger if already in continuous)
+      var cycleConstraints = [{ focusMode: 'single-shot' }];
+      if (hasPoi) cycleConstraints.unshift({ focusMode: 'single-shot', pointOfInterest: { x: x, y: y } });
+      track.applyConstraints({ advanced: cycleConstraints })
+        .catch(function () {})
+        .then(function () {
+          var contConstraints = [{ focusMode: 'continuous' }];
+          if (hasPoi) contConstraints.unshift({ focusMode: 'continuous', pointOfInterest: { x: x, y: y } });
+          return track.applyConstraints({ advanced: contConstraints });
+        })
+        .catch(function () {});
       return;
     }
-    // 2. Single-shot focus
+
     if (caps.focusMode && caps.focusMode.indexOf('single-shot') !== -1) {
       track.applyConstraints({ advanced: [{ focusMode: 'single-shot' }] }).catch(function () {});
       return;
     }
-    // 3. Zoom nudge — triggers autofocus on devices with no explicit focusMode
+
+    if (caps.focusMode && caps.focusMode.indexOf('manual') !== -1 && hasPoi) {
+      track.applyConstraints({ advanced: [{ focusMode: 'manual', pointOfInterest: { x: x, y: y } }] })
+        .catch(function () {});
+      return;
+    }
+
+    // Zoom nudge — last resort for devices with no focusMode support
     if (caps.zoom) {
       var settings = track.getSettings ? track.getSettings() : {};
       var current = settings.zoom || caps.zoom.min || 1;
@@ -333,10 +353,8 @@
       self._focusTrack = canFocus ? track : null;
       if (self._focusTrack) {
         self.reader.classList.add('is-focusable');
-        // Engage continuous autofocus immediately if available
-        if (caps.focusMode && caps.focusMode.indexOf('continuous') !== -1) {
-          track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(function () {});
-        }
+        // Small delay — some devices aren't fully ready to accept constraints at onSuccess
+        setTimeout(function () { self.refocusCamera(); }, 400);
       }
       var zoomEl = $(self.options.zoomSelector, self.root);
       if (zoomEl) { zoomEl.style.display = ''; zoomEl.removeAttribute('aria-hidden'); }
