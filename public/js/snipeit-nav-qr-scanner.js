@@ -190,12 +190,36 @@
   SnipeItNavQrScanner.prototype.handleTapToFocus = function (clientX, clientY) {
     if (!this._focusTrack) return;
     var rect = this.reader.getBoundingClientRect();
-    var x = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-    var y = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
-    this._focusTrack.applyConstraints({
-      advanced: [{ focusMode: 'manual', pointOfInterest: { x: x, y: y } }]
-    }).catch(function () {});
     this.showFocusRing(clientX - rect.left, clientY - rect.top);
+    this.refocusCamera();
+  };
+
+  SnipeItNavQrScanner.prototype.refocusCamera = function () {
+    var track = this._focusTrack;
+    if (!track) return;
+    var caps = track.getCapabilities ? track.getCapabilities() : {};
+
+    // 1. Continuous autofocus (best, re-triggers on most Androids)
+    if (caps.focusMode && caps.focusMode.indexOf('continuous') !== -1) {
+      track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(function () {});
+      return;
+    }
+    // 2. Single-shot focus
+    if (caps.focusMode && caps.focusMode.indexOf('single-shot') !== -1) {
+      track.applyConstraints({ advanced: [{ focusMode: 'single-shot' }] }).catch(function () {});
+      return;
+    }
+    // 3. Zoom nudge — triggers autofocus on devices with no explicit focusMode
+    if (caps.zoom) {
+      var settings = track.getSettings ? track.getSettings() : {};
+      var current = settings.zoom || caps.zoom.min || 1;
+      var nudged = Math.min(caps.zoom.max, current + 0.01);
+      track.applyConstraints({ advanced: [{ zoom: nudged }] })
+        .then(function () {
+          return track.applyConstraints({ advanced: [{ zoom: current }] });
+        })
+        .catch(function () {});
+    }
   };
 
   SnipeItNavQrScanner.prototype.showFocusRing = function (x, y) {
@@ -208,8 +232,11 @@
   };
 
   SnipeItNavQrScanner.prototype.applyZoom = function (value) {
+    var self = this;
     if (this._zoomTrack) {
-      this._zoomTrack.applyConstraints({ advanced: [{ zoom: value }] });
+      this._zoomTrack.applyConstraints({ advanced: [{ zoom: value }] })
+        .then(function () { self.refocusCamera(); })
+        .catch(function () {});
     } else {
       this.applyCssZoom(value);
     }
@@ -301,8 +328,16 @@
       var track = stream && stream.getVideoTracks && stream.getVideoTracks()[0];
       var caps = track && track.getCapabilities && track.getCapabilities();
       self._zoomTrack = (caps && caps.zoom) ? track : null;
-      self._focusTrack = (caps && caps.focusMode && caps.focusMode.indexOf('manual') !== -1) ? track : null;
-      if (self._focusTrack) self.reader.classList.add('is-focusable');
+      // Focus track: any device that exposes focusMode or zoom can be nudged to refocus
+      var canFocus = caps && (caps.focusMode && caps.focusMode.length > 0 || caps.zoom);
+      self._focusTrack = canFocus ? track : null;
+      if (self._focusTrack) {
+        self.reader.classList.add('is-focusable');
+        // Engage continuous autofocus immediately if available
+        if (caps.focusMode && caps.focusMode.indexOf('continuous') !== -1) {
+          track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(function () {});
+        }
+      }
       var zoomEl = $(self.options.zoomSelector, self.root);
       if (zoomEl) { zoomEl.style.display = ''; zoomEl.removeAttribute('aria-hidden'); }
       var slider = $(self.options.zoomSliderSelector, self.root);
