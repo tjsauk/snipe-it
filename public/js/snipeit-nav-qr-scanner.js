@@ -37,6 +37,7 @@
       takePhotoSelector: '[data-nav-qr-take-photo]',
       zoomSelector: '[data-nav-qr-zoom]',
       zoomSliderSelector: '[data-nav-qr-zoom-slider]',
+      switchCameraSelector: '[data-nav-qr-switch-camera]',
       autoStart: true,
       confirmBeforeNavigate: true,
       scannerScriptReadyCheck: function () {
@@ -63,6 +64,7 @@
     this.html5QrCode = null;
     this.currentRoute = null;
     this.currentRawValue = null;
+    this._cameraList = [];
   }
 
   SnipeItNavQrScanner.prototype.init = function () {
@@ -119,6 +121,13 @@
     if (parseManual) {
       parseManual.addEventListener('click', function () {
         self.applyScanValue(self.manualInput ? self.manualInput.value : '');
+      });
+    }
+
+    var switchCamera = $(this.options.switchCameraSelector, this.root);
+    if (switchCamera) {
+      switchCamera.addEventListener('click', function () {
+        self.switchCamera();
       });
     }
 
@@ -300,6 +309,8 @@
     if (!this.modal) return;
     var takePhotoBtn = $(this.options.takePhotoSelector, this.root);
     if (takePhotoBtn) takePhotoBtn.style.display = 'none';
+    var switchBtn = $(this.options.switchCameraSelector, this.root);
+    if (switchBtn) switchBtn.style.display = 'none';
     var zoomEl = $(this.options.zoomSelector, this.root);
     if (zoomEl) { zoomEl.style.display = 'none'; zoomEl.setAttribute('aria-hidden', 'true'); }
     var slider = $(this.options.zoomSliderSelector, this.root);
@@ -345,27 +356,7 @@
       self.applyScanValue(decodedText);
     };
 
-    var onSuccess = function () {
-      self.setStatus('Camera opened. Point at an asset or location QR code.', 'is-good');
-      var video = self.reader && self.reader.querySelector('video');
-      var stream = video && video.srcObject;
-      var track = stream && stream.getVideoTracks && stream.getVideoTracks()[0];
-      // Zoom: check immediately — capability is reliable for zoom
-      var caps = track && track.getCapabilities && track.getCapabilities();
-      self._zoomTrack = (caps && caps.zoom) ? track : null;
-      // Focus: always set if track exists — getCapabilities() can return incomplete
-      // data right after start; we try constraints anyway and catch failures silently
-      self._focusTrack = track || null;
-      if (self._focusTrack) {
-        self.reader.classList.add('is-focusable');
-        // Delay so camera is fully initialised before applying focus constraints
-        setTimeout(function () { self.refocusCamera(); }, 600);
-      }
-      var zoomEl = $(self.options.zoomSelector, self.root);
-      if (zoomEl) { zoomEl.style.display = ''; zoomEl.removeAttribute('aria-hidden'); }
-      var slider = $(self.options.zoomSliderSelector, self.root);
-      if (slider) slider.value = '1';
-    };
+    var onSuccess = function () { self._onCameraReady(); };
 
     var onFail = function () {
       self.html5QrCode = null;
@@ -403,10 +394,78 @@
     });
   };
 
+  SnipeItNavQrScanner.prototype._onCameraReady = function () {
+    var self = this;
+    self.setStatus('Camera opened. Point at an asset or location QR code.', 'is-good');
+    var video = self.reader && self.reader.querySelector('video');
+    var stream = video && video.srcObject;
+    var track = stream && stream.getVideoTracks && stream.getVideoTracks()[0];
+    var caps = track && track.getCapabilities && track.getCapabilities();
+    self._zoomTrack = (caps && caps.zoom) ? track : null;
+    self._focusTrack = track || null;
+    if (self._focusTrack) {
+      self.reader.classList.add('is-focusable');
+      setTimeout(function () { self.refocusCamera(); }, 600);
+    }
+    var zoomEl = $(self.options.zoomSelector, self.root);
+    if (zoomEl) { zoomEl.style.display = ''; zoomEl.removeAttribute('aria-hidden'); }
+    var slider = $(self.options.zoomSliderSelector, self.root);
+    if (slider) slider.value = '1';
+    // Fetch camera list after permission is granted — show switch button if >1 camera
+    window.Html5Qrcode.getCameras()
+      .then(function (cameras) {
+        self._cameraList = cameras || [];
+        var switchBtn = $(self.options.switchCameraSelector, self.root);
+        if (switchBtn) switchBtn.style.display = self._cameraList.length > 1 ? '' : 'none';
+      })
+      .catch(function () {});
+  };
+
+  SnipeItNavQrScanner.prototype.switchCamera = function () {
+    var self = this;
+    if (!this._cameraList || this._cameraList.length < 2) return;
+    // Find which camera is currently active by deviceId
+    var video = this.reader && this.reader.querySelector('video');
+    var stream = video && video.srcObject;
+    var track = stream && stream.getVideoTracks && stream.getVideoTracks()[0];
+    var currentId = track && track.getSettings && track.getSettings().deviceId;
+    var currentIdx = -1;
+    for (var i = 0; i < this._cameraList.length; i++) {
+      if (this._cameraList[i].id === currentId) { currentIdx = i; break; }
+    }
+    var nextIdx = (currentIdx + 1) % this._cameraList.length;
+    var next = this._cameraList[nextIdx];
+    this.stopScanner();
+    this._startWithCameraId(next.id, next.label);
+  };
+
+  SnipeItNavQrScanner.prototype._startWithCameraId = function (cameraId, label) {
+    var self = this;
+    if (this.html5QrCode) return;
+    this.html5QrCode = new window.Html5Qrcode(this.reader.id);
+    var qrbox = function (w, h) {
+      var edge = Math.floor(Math.min(w, h) * 0.75);
+      return { width: edge, height: edge };
+    };
+    var onDecode = function (text) {
+      if (self.manualInput) self.manualInput.value = text;
+      self.applyScanValue(text);
+    };
+    self.setStatus('Switching camera' + (label ? ' (' + label + ')' : '') + '…', '');
+    this.html5QrCode.start(cameraId, { fps: 10, qrbox: qrbox }, onDecode, function () {})
+      .then(function () { self._onCameraReady(); })
+      .catch(function () {
+        self.html5QrCode = null;
+        self.setStatus('Could not open this camera.', 'is-bad');
+      });
+  };
+
   SnipeItNavQrScanner.prototype.stopScanner = function () {
     var self = this;
     var takePhotoBtn = $(this.options.takePhotoSelector, this.root);
     if (takePhotoBtn) takePhotoBtn.style.display = 'none';
+    var switchBtn = $(this.options.switchCameraSelector, this.root);
+    if (switchBtn) switchBtn.style.display = 'none';
     var zoomEl = $(this.options.zoomSelector, this.root);
     if (zoomEl) { zoomEl.style.display = 'none'; zoomEl.setAttribute('aria-hidden', 'true'); }
     var slider = $(this.options.zoomSliderSelector, this.root);

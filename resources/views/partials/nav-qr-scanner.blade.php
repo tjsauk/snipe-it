@@ -30,6 +30,9 @@
                     <button type="button" class="btn btn-default" data-nav-qr-stop>
                         <i class="fa fa-stop"></i> Stop camera
                     </button>
+                    <button type="button" class="btn btn-default" data-nav-qr-switch-camera style="display:none">
+                        <i class="fa fa-refresh"></i> Switch camera
+                    </button>
                     <button type="button" class="btn btn-default" data-nav-qr-take-photo style="display:none">
                         <i class="fa fa-camera"></i> Take Photo
                     </button>
