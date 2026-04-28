@@ -411,19 +411,24 @@
     if (zoomEl) { zoomEl.style.display = ''; zoomEl.removeAttribute('aria-hidden'); }
     var slider = $(self.options.zoomSliderSelector, self.root);
     if (slider) slider.value = '1';
-    // Fetch camera list after permission is granted — show switch button if >1 camera
+    // Fetch camera list after permission is granted
+    var switchBtn = $(self.options.switchCameraSelector, self.root);
+    if (switchBtn) switchBtn.style.display = '';
     window.Html5Qrcode.getCameras()
-      .then(function (cameras) {
-        self._cameraList = cameras || [];
-        var switchBtn = $(self.options.switchCameraSelector, self.root);
-        if (switchBtn) switchBtn.style.display = self._cameraList.length > 1 ? '' : 'none';
-      })
+      .then(function (cameras) { self._cameraList = cameras || []; })
       .catch(function () {});
   };
 
   SnipeItNavQrScanner.prototype.switchCamera = function () {
     var self = this;
-    if (!this._cameraList || this._cameraList.length < 2) return;
+    if (!this._cameraList || this._cameraList.length === 0) {
+      this.setStatus('Detecting cameras, try again.', 'is-warn');
+      return;
+    }
+    if (this._cameraList.length < 2) {
+      this.setStatus('Only one camera available on this device.', 'is-warn');
+      return;
+    }
     // Find which camera is currently active by deviceId
     var video = this.reader && this.reader.querySelector('video');
     var stream = video && video.srcObject;
