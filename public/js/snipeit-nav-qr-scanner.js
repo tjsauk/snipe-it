@@ -309,8 +309,6 @@
     if (!this.modal) return;
     var takePhotoBtn = $(this.options.takePhotoSelector, this.root);
     if (takePhotoBtn) takePhotoBtn.style.display = 'none';
-    var switchBtn = $(this.options.switchCameraSelector, this.root);
-    if (switchBtn) switchBtn.style.display = 'none';
     var zoomEl = $(this.options.zoomSelector, this.root);
     if (zoomEl) { zoomEl.style.display = 'none'; zoomEl.setAttribute('aria-hidden', 'true'); }
     var slider = $(this.options.zoomSliderSelector, this.root);
@@ -411,12 +409,12 @@
     if (zoomEl) { zoomEl.style.display = ''; zoomEl.removeAttribute('aria-hidden'); }
     var slider = $(self.options.zoomSliderSelector, self.root);
     if (slider) slider.value = '1';
-    // Fetch camera list after permission is granted — show switch button if >1 camera
+    // Fetch camera list after permission is granted — enable switch button if >1 camera
     window.Html5Qrcode.getCameras()
       .then(function (cameras) {
         self._cameraList = cameras || [];
         var switchBtn = $(self.options.switchCameraSelector, self.root);
-        if (switchBtn) switchBtn.style.display = self._cameraList.length > 1 ? '' : 'none';
+        if (switchBtn) switchBtn.disabled = self._cameraList.length < 2;
       })
       .catch(function () {});
   };
@@ -465,7 +463,7 @@
     var takePhotoBtn = $(this.options.takePhotoSelector, this.root);
     if (takePhotoBtn) takePhotoBtn.style.display = 'none';
     var switchBtn = $(this.options.switchCameraSelector, this.root);
-    if (switchBtn) switchBtn.style.display = 'none';
+    if (switchBtn) switchBtn.disabled = true;
     var zoomEl = $(this.options.zoomSelector, this.root);
     if (zoomEl) { zoomEl.style.display = 'none'; zoomEl.setAttribute('aria-hidden', 'true'); }
     var slider = $(this.options.zoomSliderSelector, this.root);
