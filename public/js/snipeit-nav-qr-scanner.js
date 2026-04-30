@@ -64,7 +64,8 @@
     this.html5QrCode = null;
     this.currentRoute = null;
     this.currentRawValue = null;
-    this._cameraList = [];
+    this._currentFacingMode = 'environment';
+    this._refocusInterval = null;
   }
 
   SnipeItNavQrScanner.prototype.init = function () {
@@ -210,8 +211,9 @@
     if (!track) return;
     var caps = track.getCapabilities ? track.getCapabilities() : {};
     var hasPoi = typeof x === 'number' && typeof y === 'number';
+    var modes = caps.focusMode || [];
 
-    if (caps.focusMode && caps.focusMode.indexOf('continuous') !== -1) {
+    if (modes.indexOf('continuous') !== -1) {
       // Single-shot → continuous cycle forces immediate re-focus on many Androids
       // (Samsung etc. won't re-trigger if already in continuous)
       var cycleConstraints = [{ focusMode: 'single-shot' }];
@@ -227,33 +229,32 @@
       return;
     }
 
-    if (caps.focusMode && caps.focusMode.indexOf('single-shot') !== -1) {
-      track.applyConstraints({ advanced: [{ focusMode: 'single-shot' }] }).catch(function () {});
+    if (modes.indexOf('single-shot') !== -1) {
+      var ssConstraints = [{ focusMode: 'single-shot' }];
+      if (hasPoi) ssConstraints.unshift({ focusMode: 'single-shot', pointOfInterest: { x: x, y: y } });
+      track.applyConstraints({ advanced: ssConstraints }).catch(function () {});
       return;
     }
 
-    if (caps.focusMode && caps.focusMode.indexOf('manual') !== -1 && hasPoi) {
+    if (modes.indexOf('manual') !== -1 && hasPoi) {
       track.applyConstraints({ advanced: [{ focusMode: 'manual', pointOfInterest: { x: x, y: y } }] })
         .catch(function () {});
       return;
     }
 
-    // Zoom nudge — triggers autofocus on devices with no focusMode support
+    // focusMode not reported by getCapabilities() — try continuous AF first (works on many
+    // Androids even when not advertised), then zoom nudge as additional trigger
+    var blindConstraints = [{ focusMode: 'continuous' }];
+    if (hasPoi) blindConstraints.unshift({ focusMode: 'continuous', pointOfInterest: { x: x, y: y } });
+    track.applyConstraints({ advanced: blindConstraints }).catch(function () {});
     if (caps.zoom) {
       var settings = track.getSettings ? track.getSettings() : {};
       var current = settings.zoom || caps.zoom.min || 1;
       var nudged = Math.min(caps.zoom.max, current + 0.01);
       track.applyConstraints({ advanced: [{ zoom: nudged }] })
-        .then(function () {
-          return track.applyConstraints({ advanced: [{ zoom: current }] });
-        })
+        .then(function () { return track.applyConstraints({ advanced: [{ zoom: current }] }); })
         .catch(function () {});
-      return;
     }
-
-    // Blind attempt — getCapabilities() may have returned incomplete data at camera start;
-    // try continuous autofocus anyway, failures are silent
-    track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(function () {});
   };
 
   SnipeItNavQrScanner.prototype.showFocusRing = function (x, y) {
@@ -354,7 +355,10 @@
       self.applyScanValue(decodedText);
     };
 
-    var onSuccess = function () { self._onCameraReady(); };
+    var onReady = function (facingMode) {
+      self._currentFacingMode = facingMode;
+      self._onCameraReady();
+    };
 
     var onFail = function () {
       self.html5QrCode = null;
@@ -363,31 +367,44 @@
       if (takePhotoBtn) takePhotoBtn.style.display = '';
     };
 
-    // Attempt 1: rear camera string form (widest Android compatibility) + zoom
+    // Attempt 1: rear camera, high resolution + continuous AF (enables autofocus on most Androids)
     self.html5QrCode.start(
       { facingMode: 'environment' },
-      { fps: 10, qrbox: qrbox, rememberLastUsedCamera: true,
-        videoConstraints: { facingMode: { ideal: 'environment' }, advanced: [{ zoom: 2.0 }] } },
+      { fps: 10, qrbox: qrbox,
+        videoConstraints: { facingMode: { ideal: 'environment' },
+          width: { ideal: 1280 }, height: { ideal: 720 },
+          advanced: [{ focusMode: 'continuous' }] } },
       onDecode, function () {}
     )
-    .then(onSuccess)
+    .then(function () { onReady('environment'); })
     .catch(function () {
-      // Attempt 2: rear camera string form, no zoom
+      // Attempt 2: rear camera, high resolution only (no focusMode constraint)
       self.html5QrCode.start(
         { facingMode: 'environment' },
-        { fps: 10, qrbox: qrbox, rememberLastUsedCamera: true },
+        { fps: 10, qrbox: qrbox,
+          videoConstraints: { facingMode: { ideal: 'environment' },
+            width: { ideal: 1280 }, height: { ideal: 720 } } },
         onDecode, function () {}
       )
-      .then(onSuccess)
+      .then(function () { onReady('environment'); })
       .catch(function () {
-        // Attempt 3: any camera (no facing preference)
+        // Attempt 3: rear camera, no extra constraints
         self.html5QrCode.start(
-          { facingMode: 'user' },
+          { facingMode: 'environment' },
           { fps: 10, qrbox: qrbox },
           onDecode, function () {}
         )
-        .then(onSuccess)
-        .catch(onFail);
+        .then(function () { onReady('environment'); })
+        .catch(function () {
+          // Attempt 4: front camera last resort
+          self.html5QrCode.start(
+            { facingMode: 'user' },
+            { fps: 10, qrbox: qrbox },
+            onDecode, function () {}
+          )
+          .then(function () { onReady('user'); })
+          .catch(onFail);
+        });
       });
     });
   };
@@ -403,41 +420,27 @@
     self._focusTrack = track || null;
     if (self._focusTrack) {
       self.reader.classList.add('is-focusable');
+      // First attempt at 600ms, second at 2000ms when getCapabilities() is more complete
       setTimeout(function () { self.refocusCamera(); }, 600);
+      setTimeout(function () { self.refocusCamera(); }, 2000);
+      // Periodic refocus — some Androids lose AF after a few seconds
+      self._refocusInterval = setInterval(function () { self.refocusCamera(); }, 5000);
     }
     var zoomEl = $(self.options.zoomSelector, self.root);
     if (zoomEl) { zoomEl.style.display = ''; zoomEl.removeAttribute('aria-hidden'); }
     var slider = $(self.options.zoomSliderSelector, self.root);
     if (slider) slider.value = '1';
-    // Fetch camera list after permission is granted — enable switch button if >1 camera
-    window.Html5Qrcode.getCameras()
-      .then(function (cameras) {
-        self._cameraList = cameras || [];
-        var switchBtn = $(self.options.switchCameraSelector, self.root);
-        if (switchBtn) switchBtn.disabled = self._cameraList.length < 2;
-      })
-      .catch(function () {});
+    var switchBtn = $(self.options.switchCameraSelector, self.root);
+    if (switchBtn) switchBtn.disabled = false;
   };
 
   SnipeItNavQrScanner.prototype.switchCamera = function () {
-    var self = this;
-    if (!this._cameraList || this._cameraList.length < 2) return;
-    // Find which camera is currently active by deviceId
-    var video = this.reader && this.reader.querySelector('video');
-    var stream = video && video.srcObject;
-    var track = stream && stream.getVideoTracks && stream.getVideoTracks()[0];
-    var currentId = track && track.getSettings && track.getSettings().deviceId;
-    var currentIdx = -1;
-    for (var i = 0; i < this._cameraList.length; i++) {
-      if (this._cameraList[i].id === currentId) { currentIdx = i; break; }
-    }
-    var nextIdx = (currentIdx + 1) % this._cameraList.length;
-    var next = this._cameraList[nextIdx];
+    var nextFacing = (this._currentFacingMode === 'environment') ? 'user' : 'environment';
     this.stopScanner();
-    this._startWithCameraId(next.id, next.label);
+    this._startWithFacingMode(nextFacing);
   };
 
-  SnipeItNavQrScanner.prototype._startWithCameraId = function (cameraId, label) {
+  SnipeItNavQrScanner.prototype._startWithFacingMode = function (facingMode) {
     var self = this;
     if (this.html5QrCode) return;
     this.html5QrCode = new window.Html5Qrcode(this.reader.id);
@@ -449,13 +452,21 @@
       if (self.manualInput) self.manualInput.value = text;
       self.applyScanValue(text);
     };
-    self.setStatus('Switching camera' + (label ? ' (' + label + ')' : '') + '…', '');
-    this.html5QrCode.start(cameraId, { fps: 10, qrbox: qrbox }, onDecode, function () {})
-      .then(function () { self._onCameraReady(); })
-      .catch(function () {
-        self.html5QrCode = null;
-        self.setStatus('Could not open this camera.', 'is-bad');
-      });
+    var label = facingMode === 'environment' ? 'back' : 'front';
+    self.setStatus('Switching to ' + label + ' camera…', '');
+    this.html5QrCode.start(
+      { facingMode: facingMode },
+      { fps: 10, qrbox: qrbox },
+      onDecode, function () {}
+    )
+    .then(function () {
+      self._currentFacingMode = facingMode;
+      self._onCameraReady();
+    })
+    .catch(function () {
+      self.html5QrCode = null;
+      self.setStatus('Could not open ' + label + ' camera.', 'is-bad');
+    });
   };
 
   SnipeItNavQrScanner.prototype.stopScanner = function () {
@@ -468,6 +479,7 @@
     if (zoomEl) { zoomEl.style.display = 'none'; zoomEl.setAttribute('aria-hidden', 'true'); }
     var slider = $(this.options.zoomSliderSelector, this.root);
     if (slider) slider.value = '1';
+    if (this._refocusInterval) { clearInterval(this._refocusInterval); this._refocusInterval = null; }
     this._zoomTrack = null;
     this._focusTrack = null;
     if (this.reader) this.reader.classList.remove('is-focusable');
