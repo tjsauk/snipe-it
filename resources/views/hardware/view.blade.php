@@ -1687,6 +1687,20 @@
                                         The calendar below shows that asset's reservations and schedule.
                                     </div>
                                     @endif
+                                    <form id="calendarReserveForm" method="POST" action="{{ route('hardware.bulkreserve.store') }}">
+                                        {{ csrf_field() }}
+                                        <input type="hidden" name="selected_assets[]" value="{{ $asset->id }}">
+                                        <input type="hidden" id="cal_periods_json" name="periods_json" value="">
+                                        <input type="hidden" name="_from_quick" value="1">
+                                        <input type="hidden" name="_return_asset_id" value="{{ $asset->id }}">
+                                        <input type="hidden" name="checkout_to_type" value="user">
+                                        <input type="hidden" name="assigned_user" value="{{ Auth::id() }}">
+                                        <p class="text-muted small" style="margin-bottom:10px;">
+                                            <i class="fa fa-info-circle"></i>
+                                            Vedä kalenterissa aikaväli valitaksesi varausajan itsellesi.
+                                        </p>
+                                    </form>
+
                                     <div id="asset-calendar-root"></div>
                                 </div>
                             </div>
@@ -1704,10 +1718,22 @@
         @include ('partials.bootstrap-table')
         <script>
         window.assetCalendarInput = {
-            mode: 'view',
+            mode: 'reserve',
             currentUser: @json(Auth::user()->username ?? (string)Auth::id()),
-            continuousCutMode: true,
+            continuousCutMode: false,
             assets: {!! json_encode($calendarAssets) !!}
+        };
+        window.assetCalendarOnConfirm = function(output) {
+            if (!output || !output.assets) return;
+            var hasAny = output.assets.some(function(a) {
+                return a.selectedPeriods && a.selectedPeriods.length > 0;
+            });
+            if (!hasAny) {
+                alert('Ei valittuja ajanjaksoja. Vedä kalenterissa aikaväli ensin.');
+                return;
+            }
+            document.getElementById('cal_periods_json').value = JSON.stringify(output.assets);
+            document.getElementById('calendarReserveForm').submit();
         };
         </script>
         <script>

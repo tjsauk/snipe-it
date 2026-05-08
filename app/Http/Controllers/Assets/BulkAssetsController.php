@@ -960,14 +960,18 @@ class BulkAssetsController extends Controller
     {
         $this->authorize('view', Asset::class);
 
-        $assetIds       = array_filter((array) $request->get('selected_assets', []));
-        $periodsRaw     = $request->input('periods_json');
-        $checkoutToType = $request->get('checkout_to_type', 'user');
-        $fromQuick      = (bool) $request->input('_from_quick', false);
+        $assetIds        = array_filter((array) $request->get('selected_assets', []));
+        $periodsRaw      = $request->input('periods_json');
+        $checkoutToType  = $request->get('checkout_to_type', 'user');
+        $fromQuick       = (bool) $request->input('_from_quick', false);
+        $returnAssetId   = (int) $request->input('_return_asset_id', 0);
+        $returnAsset     = $returnAssetId ? Asset::find($returnAssetId) : null;
 
-        $reserveFailRoute = $fromQuick
-            ? redirect()->route('hardware.index')
-            : redirect()->route('hardware.bulkreserve.show');
+        $reserveFailRoute = $returnAsset
+            ? redirect()->route('hardware.show', $returnAsset->id)
+            : ($fromQuick
+                ? redirect()->route('hardware.index')
+                : redirect()->route('hardware.bulkreserve.show'));
 
         if (empty($assetIds)) {
             return $reserveFailRoute
@@ -1002,8 +1006,10 @@ class BulkAssetsController extends Controller
                 return $reserveFailRoute
                     ->with('error', 'No assets could be checked out.');
             }
-            return redirect()->route('hardware.index')
-                ->with('success', trans('general.bulk_reserve_success', ['count' => $successCount]));
+            $successRoute = $returnAsset
+                ? redirect()->route('hardware.show', $returnAsset->id)
+                : redirect()->route('hardware.index');
+            return $successRoute->with('success', trans('general.bulk_reserve_success', ['count' => $successCount]));
         }
 
         if (empty($periodsRaw)) {
@@ -1181,7 +1187,9 @@ class BulkAssetsController extends Controller
                 ]));
         }
 
-        return redirect()->route('hardware.index')
-            ->with('success', trans('general.bulk_reserve_success', ['count' => $successCount]));
+        $successRoute = $returnAsset
+            ? redirect()->route('hardware.show', $returnAsset->id)
+            : redirect()->route('hardware.index');
+        return $successRoute->with('success', trans('general.bulk_reserve_success', ['count' => $successCount]));
     }
 }
