@@ -24,12 +24,6 @@
                 </div>
 
                 <div class="nav-qr-actions">
-                    <button type="button" class="btn btn-default" data-nav-qr-start>
-                        <i class="fa fa-video-camera"></i> Open camera
-                    </button>
-                    <button type="button" class="btn btn-default" data-nav-qr-stop>
-                        <i class="fa fa-stop"></i> Stop camera
-                    </button>
                     <button type="button" class="btn btn-default" data-nav-qr-switch-camera disabled>
                         <i class="fa fa-refresh"></i> Switch camera
                     </button>
@@ -37,7 +31,7 @@
                         <i class="fa fa-camera"></i> Take Photo
                     </button>
                     <button type="button" class="btn btn-default" data-nav-qr-close>
-                        <i class="fa fa-times"></i> Close
+                        <i class="fa fa-times"></i> Cancel
                     </button>
                 </div>
                 <input type="file" accept="image/*" capture="environment"
@@ -45,20 +39,6 @@
 
                 <div class="nav-qr-status" data-nav-qr-status>Camera is idle.</div>
 
-            </div>
-
-            <div class="nav-qr-footer">
-                <div class="nav-qr-actions">
-                    <button type="button" class="btn btn-primary" data-nav-qr-use-route disabled>
-                        <i class="fa fa-arrow-right"></i> Use scanned route
-                    </button>
-                    <button type="button" class="btn btn-primary" data-nav-qr-open-tab disabled>
-                        <i class="fa fa-external-link"></i> Open in new tab
-                    </button>
-                    <button type="button" class="btn btn-default" data-nav-qr-close>
-                        <i class="fa fa-times"></i> Cancel
-                    </button>
-                </div>
             </div>
         </div>
     </div>

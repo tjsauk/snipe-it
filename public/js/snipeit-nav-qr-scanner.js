@@ -546,34 +546,18 @@
   };
 
   SnipeItNavQrScanner.prototype.applyScanValue = function (rawValue) {
-    this.currentRawValue = rawValue || '';
-    if (this.rawValue) this.rawValue.textContent = this.currentRawValue || '—';
-
     var extracted = this.extractRoute(rawValue);
     if (!extracted.ok) {
-      this.currentRoute = null;
-      if (this.routeValue) this.routeValue.textContent = '—';
-      if (this.matchValue) this.matchValue.textContent = extracted.reason;
-      if (this.useRouteButton) this.useRouteButton.disabled = true;
-      if (this.openInTabButton) this.openInTabButton.disabled = true;
       this.setStatus(extracted.reason, 'is-bad');
       return;
     }
 
-    this.currentRoute = extracted.route;
-    if (this.routeValue) this.routeValue.textContent = extracted.route;
-
     var validation = this.validateRoute(extracted.route);
     if (validation.valid) {
-      if (this.matchValue) this.matchValue.textContent = 'Supported pattern: ' + validation.name;
-      if (this.useRouteButton) this.useRouteButton.disabled = false;
-      if (this.openInTabButton) this.openInTabButton.disabled = false;
-      this.setStatus('Valid route detected.', 'is-good');
+      this.setStatus('QR code recognized. Navigating…', 'is-good');
+      window.location.assign(extracted.route);
     } else {
-      if (this.matchValue) this.matchValue.textContent = validation.reason;
-      if (this.useRouteButton) this.useRouteButton.disabled = false;
-      if (this.openInTabButton) this.openInTabButton.disabled = false;
-      this.setStatus('Route extracted but not matched to current defaults.', 'is-warn');
+      this.setStatus('QR code read but not recognized: ' + extracted.route, 'is-warn');
     }
   };
 
