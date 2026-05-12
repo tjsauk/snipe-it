@@ -428,8 +428,10 @@
     }
     var zoomEl = $(self.options.zoomSelector, self.root);
     if (zoomEl) { zoomEl.style.display = ''; zoomEl.removeAttribute('aria-hidden'); }
+    var initialZoom = 2.0;
     var slider = $(self.options.zoomSliderSelector, self.root);
-    if (slider) slider.value = '1';
+    if (slider) slider.value = String(initialZoom);
+    self.applyZoom(initialZoom);
     var switchBtn = $(self.options.switchCameraSelector, self.root);
     if (switchBtn) switchBtn.disabled = false;
   };
